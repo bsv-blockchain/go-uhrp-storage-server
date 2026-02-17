@@ -1,0 +1,4 @@
+.env
+uhrp-storage-server
+public/cdn/*
+!public/cdn/.gitkeep
