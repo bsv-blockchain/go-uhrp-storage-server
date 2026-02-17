@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -37,8 +38,15 @@ func main() {
 	store := storage.NewFileStore(publicDir)
 	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork)
 
-	// Initialize wallet (when wallet-toolbox is available)
-	// For now the wallet is nil; endpoints requiring wallet will return appropriate errors.
+	// Initialize wallet using wallet-toolbox
+	if cfg.ServerPrivateKey != "" && cfg.WalletStorageURL != "" {
+		if err := wp.InitWallet(context.Background()); err != nil {
+			log.Printf("WARNING: Failed to initialize wallet: %v", err)
+			log.Println("Endpoints requiring wallet will return errors until wallet is available.")
+		}
+	} else {
+		log.Println("WARNING: SERVER_PRIVATE_KEY or WALLET_STORAGE_URL not set; wallet features disabled.")
+	}
 
 	mimeMiddleware := &handlers.MimeTypeMiddleware{CDNPath: store.CDNPath()}
 

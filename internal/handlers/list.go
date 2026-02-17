@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
@@ -32,21 +36,75 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In a full implementation, we'd use wallet.ListOutputs to query the
-	// 'uhrp advertisements' basket filtered by the uploader's identity key tag.
-	// Then decode tags to extract uhrpUrl and expiryTime, filtering out expired entries.
+	wallet := h.WalletProvider.GetWallet()
+	if wallet == nil {
+		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
+		return
+	}
 
-	// TODO: Implement with wallet.ListOutputs when go-sdk wallet toolbox is available
-	// wallet := h.WalletProvider.GetWallet()
-	// outputs, _ := wallet.ListOutputs(...)
+	includeCustom := true
+	includeTags := true
+	result, err := wallet.ListOutputs(r.Context(), sdkWallet.ListOutputsArgs{
+		Basket:                    "uhrp advertisements",
+		Tags:                      []string{fmt.Sprintf("uploader-%s", identityKey.ToDERHex())},
+		IncludeCustomInstructions: &includeCustom,
+		IncludeTags:               &includeTags,
+	}, "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
+		return
+	}
 
-	// For now, return empty list
+	now := time.Now().Unix()
+	uploads := make([]listUpload, 0)
+	for _, out := range result.Outputs {
+		meta := parseCustomInstructions(out.CustomInstructions)
+		if meta == nil {
+			continue
+		}
+		expiryTime := parseExpiryTime(meta["expiryTime"])
+		if expiryTime > 0 && expiryTime < now {
+			continue // expired
+		}
+		uploads = append(uploads, listUpload{
+			UhrpURL:    meta["uhrpURL"],
+			ExpiryTime: expiryTime,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, listResponse{
 		Status:  "success",
-		Uploads: []listUpload{},
+		Uploads: uploads,
 	})
 }
 
 func isUnknownKey(key *ec.PublicKey) bool {
 	return key == nil || middleware.IsUnknownIdentity(key)
+}
+
+// parseCustomInstructions decodes the JSON custom instructions from an output.
+func parseCustomInstructions(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// parseExpiryTime parses an RFC3339 or unix timestamp string.
+func parseExpiryTime(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t.Unix()
+	}
+	// Try as raw unix
+	var unix int64
+	fmt.Sscanf(s, "%d", &unix)
+	return unix
 }
