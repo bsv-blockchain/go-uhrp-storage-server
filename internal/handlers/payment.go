@@ -44,9 +44,9 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 					return 0, fmt.Errorf("wallet not available for renew price calculation")
 				}
 
-				fileSize, i, err1, shouldReturn := getFileSize(req.Context(), wallet, payload.UhrpURL)
-				if shouldReturn {
-					return i, err1
+				fileSize, err := getFileSize(req.Context(), wallet, payload.UhrpURL)
+				if err != nil {
+					return 0, err
 				}
 
 				price, err := calc.GetPrice(fileSize, payload.AdditionalMinutes)
@@ -62,7 +62,7 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 	}
 }
 
-func getFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string) (int64, int, error, bool) {
+func getFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string) (int64, error) {
 	includeCustom := true
 	includeTags := true
 	includeLocking := sdkWallet.OutputIncludeLockingScripts
@@ -74,7 +74,7 @@ func getFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string
 		Tags:                      []string{fmt.Sprintf("uhrpUrl_%s", uhrpURL)},
 	}, "")
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to query wallet outputs: %w", err), true
+		return 0, fmt.Errorf("failed to query wallet outputs: %w", err)
 	}
 
 	var fileSize int64
@@ -89,7 +89,7 @@ func getFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string
 	}
 
 	if !matchFound {
-		return 0, 0, fmt.Errorf("uhrpUrl not found in wallet outputs"), true
+		return 0, fmt.Errorf("uhrpUrl not found in wallet outputs")
 	}
-	return fileSize, 0, nil, false
+	return fileSize, nil
 }
