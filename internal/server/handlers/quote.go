@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/pricing"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
 // QuoteHandler handles POST /quote requests.

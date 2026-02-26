@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/pricing"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
 

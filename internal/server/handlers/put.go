@@ -13,7 +13,7 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/uhrp"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/uhrp"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
 
