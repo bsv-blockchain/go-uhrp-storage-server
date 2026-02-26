@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
@@ -85,12 +85,12 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Create HMAC using the wallet to secure the upload URL
 	hmac := ""
-	w2 := h.WalletProvider.GetWallet()
-	if w2 == nil {
+	wallet := h.WalletProvider.GetWallet()
+	if wallet == nil {
 		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
-	hmacResult, hmacErr := w2.CreateHMAC(r.Context(), sdkWallet.CreateHMACArgs{
+	hmacResult, hmacErr := wallet.CreateHMAC(r.Context(), sdkWallet.CreateHMACArgs{
 		EncryptionArgs: sdkWallet.EncryptionArgs{
 			ProtocolID: sdkWallet.Protocol{
 				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,

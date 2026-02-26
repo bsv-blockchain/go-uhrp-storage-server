@@ -1,17 +1,12 @@
 package handlers
 
 import (
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/bsv-blockchain/go-sdk/script"
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/uhrp"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
@@ -52,40 +47,18 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify HMAC using wallet
-	str := fmt.Sprintf("fileSize=%s&objectID=%s&expiry=%s&uploader=%s", fileSizeStr, objectID, expiry, uploader)
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
 		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized")
 		return
 	}
 
-	hmacBytes, err := hex.DecodeString(hmac)
-	if err != nil || len(hmacBytes) != 32 {
-		writeError(w, http.StatusBadRequest, "ERR_INVALID_HMAC", "Invalid HMAC format")
-		return
-	}
-	var hmacArr [32]byte
-	copy(hmacArr[:], hmacBytes)
-
-	verifyResult, err := wallet.VerifyHMAC(r.Context(), sdkWallet.VerifyHMACArgs{
-		EncryptionArgs: sdkWallet.EncryptionArgs{
-			ProtocolID: sdkWallet.Protocol{
-				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-				Protocol:      "uhrp file hosting",
-			},
-			KeyID:        objectID,
-			Counterparty: sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeSelf},
-		},
-		Data: []byte(str),
-		HMAC: hmacArr,
-	}, "")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ERR_HMAC_VERIFY", "HMAC verification failed")
-		return
-	}
-	if !verifyResult.Valid {
-		writeError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Invalid HMAC")
+	if err := walletpkg.VerifyUploaderHMAC(r.Context(), wallet, fileSizeStr, objectID, expiry, uploader, hmac); err != nil {
+		if strings.Contains(err.Error(), "invalid HMAC") {
+			writeError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Invalid HMAC")
+		} else {
+			writeError(w, http.StatusInternalServerError, "ERR_HMAC_VERIFY", "HMAC verification failed")
+		}
 		return
 	}
 
@@ -115,33 +88,19 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
-	// Build a PushDrop-style locking script for the UHRP advertisement
-	// Fields: [uhrpURL, hostingDomain, expiryTime, contentType, contentLength, objectID, uploaderKey]
 	uhrpURL := uhrp.GetURLForHash(hash)
-	customInstructions := buildCustomInstructions(uhrpURL, h.HostingDomain, expiry, contentType, fileSizeStr, objectID, uploader)
 
-	lockingScript, err := buildPushDropScript(uhrpURL, h.HostingDomain, expiry, contentType, fileSizeStr, objectID, uploader)
-	if err != nil {
-		log.Printf("Failed to build advertisement script: %v", err)
-		writeError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to create advertisement")
-		return
-	}
+	expiryInt, _ := strconv.ParseInt(expiry, 10, 64)
+	err = walletpkg.CreateAdvertisement(r.Context(), wallet, walletpkg.CreateAdParams{
+		UhrpURL:       uhrpURL,
+		HostingDomain: h.HostingDomain,
+		ExpirySecs:    expiryInt,
+		ContentType:   contentType,
+		FileSize:      fileSize,
+		ObjectID:      objectID,
+		Uploader:      uploader,
+	})
 
-	// Create the advertisement transaction via wallet
-	_, err = wallet.CreateAction(r.Context(), sdkWallet.CreateActionArgs{
-		Description: fmt.Sprintf("UHRP advertisement for %s", uhrpURL),
-		Outputs: []sdkWallet.CreateActionOutput{
-			{
-				LockingScript:      lockingScript,
-				Satoshis:           1,
-				OutputDescription:  "UHRP advertisement token",
-				Basket:             "uhrp advertisements",
-				CustomInstructions: customInstructions,
-				Tags:               []string{"uhrp-ad", fmt.Sprintf("uploader-%s", uploader)},
-			},
-		},
-		Labels: []string{"uhrp-advertisement"},
-	}, "")
 	if err != nil {
 		log.Printf("Failed to create UHRP advertisement: %v", err)
 		writeError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to broadcast advertisement")
@@ -151,34 +110,4 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("File uploaded: objectID=%s, size=%d, uploader=%s", objectID, len(body), uploader)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "success"})
-}
-
-// buildCustomInstructions creates a JSON string of the advertisement metadata
-// stored as customInstructions on the output, for later retrieval by ListOutputs.
-func buildCustomInstructions(uhrpURL, hostingDomain, expiry, contentType, fileSize, objectID, uploader string) string {
-	data := map[string]string{
-		"uhrpURL":       uhrpURL,
-		"hostingDomain": hostingDomain,
-		"expiryTime":    expiry,
-		"contentType":   contentType,
-		"fileSize":      fileSize,
-		"objectID":      objectID,
-		"uploader":      uploader,
-	}
-	b, _ := json.Marshal(data)
-	return string(b)
-}
-
-// buildPushDropScript builds an OP_RETURN-based script with push data fields.
-func buildPushDropScript(uhrpURL, hostingDomain, expiry, contentType, fileSize, objectID, uploader string) ([]byte, error) {
-	s := &script.Script{}
-	if err := s.AppendOpcodes(script.OpFALSE, script.OpRETURN); err != nil {
-		return nil, err
-	}
-	for _, field := range []string{uhrpURL, hostingDomain, expiry, contentType, fileSize, objectID, uploader} {
-		if err := s.AppendPushDataString(field); err != nil {
-			return nil, err
-		}
-	}
-	return *s, nil
 }

@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
 
@@ -42,14 +40,7 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeCustom := true
-	includeTags := true
-	result, err := wallet.ListOutputs(r.Context(), sdkWallet.ListOutputsArgs{
-		Basket:                    "uhrp advertisements",
-		Tags:                      []string{fmt.Sprintf("uploader-%s", identityKey.ToDERHex())},
-		IncludeCustomInstructions: &includeCustom,
-		IncludeTags:               &includeTags,
-	}, "")
+	outputs, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
 		return
@@ -57,8 +48,8 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().Unix()
 	uploads := make([]listUpload, 0)
-	for _, out := range result.Outputs {
-		meta := parseCustomInstructions(out.CustomInstructions)
+	for _, out := range outputs {
+		meta := walletpkg.ParseCustomInstructions(out.CustomInstructions)
 		if meta == nil {
 			continue
 		}
@@ -80,18 +71,6 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func isUnknownKey(key *ec.PublicKey) bool {
 	return key == nil || middleware.IsUnknownIdentity(key)
-}
-
-// parseCustomInstructions decodes the JSON custom instructions from an output.
-func parseCustomInstructions(s string) map[string]string {
-	if s == "" {
-		return nil
-	}
-	var m map[string]string
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return nil
-	}
-	return m
 }
 
 // parseExpiryTime parses an RFC3339 or unix timestamp string.
