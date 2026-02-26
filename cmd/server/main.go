@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
+	"github.com/bsv-blockchain/go-sdk/auth"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -79,35 +81,41 @@ func main() {
 	}).ServeHTTP)
 
 	// === Post-auth routes (require auth + payment middleware) ===
-	// In a full implementation, these would be wrapped with auth and payment middleware:
-	//   authMiddleware := middleware.NewAuth(wallet, middleware.WithAuthAllowUnauthenticated())
-	//   paymentMiddleware := middleware.NewPayment(wallet, middleware.WithRequestPriceCalculator(...))
-	//   r.Group(func(r chi.Router) {
-	//       r.Use(authMiddleware.HTTPHandler)
-	//       r.Use(paymentMiddleware.HTTPHandler)
-	//       ... routes ...
-	//   })
+	if wp.GetWallet() != nil {
+		sessionManager := auth.NewSessionManager()
+		authMiddleware := middleware.NewAuth(wp.GetWallet(), middleware.WithAuthSessionManager(sessionManager))
+		paymentMiddleware := middleware.NewPayment(wp.GetWallet(), middleware.WithRequestPriceCalculator(
+			handlers.RequestPriceCalculator(calc, wp),
+		))
 
-	// For now, register them directly (auth middleware requires a non-nil wallet)
-	r.Post("/upload", (&handlers.UploadHandler{
-		Calculator:        calc,
-		WalletProvider:    wp,
-		HostingDomain:     cfg.HostingDomain,
-		MinHostingMinutes: cfg.MinHostingMinutes,
-	}).ServeHTTP)
+		// The auth middleware intercepts this path to perform the DPP handshake.
+		r.Handle("/.well-known/auth", authMiddleware.HTTPHandler(http.NotFoundHandler()))
 
-	r.Get("/list", (&handlers.ListHandler{
-		WalletProvider: wp,
-	}).ServeHTTP)
+		r.Group(func(r chi.Router) {
+			r.Use(authMiddleware.HTTPHandler)
+			r.Use(paymentMiddleware.HTTPHandler)
 
-	r.Post("/renew", (&handlers.RenewHandler{
-		Calculator:     calc,
-		WalletProvider: wp,
-	}).ServeHTTP)
+			r.Post("/upload", (&handlers.UploadHandler{
+				Calculator:        calc,
+				WalletProvider:    wp,
+				HostingDomain:     cfg.HostingDomain,
+				MinHostingMinutes: cfg.MinHostingMinutes,
+			}).ServeHTTP)
 
-	r.Get("/find", (&handlers.FindHandler{
-		WalletProvider: wp,
-	}).ServeHTTP)
+			r.Get("/list", (&handlers.ListHandler{
+				WalletProvider: wp,
+			}).ServeHTTP)
+
+			r.Post("/renew", (&handlers.RenewHandler{
+				Calculator:     calc,
+				WalletProvider: wp,
+			}).ServeHTTP)
+
+			r.Get("/find", (&handlers.FindHandler{
+				WalletProvider: wp,
+			}).ServeHTTP)
+		})
+	}
 
 	// 404 handler
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
