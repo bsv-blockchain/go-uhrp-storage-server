@@ -4,7 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
 
@@ -27,39 +28,51 @@ type findResponse struct {
 	Description string    `json:"description,omitempty"`
 }
 
+// ServeHTTP handles the /find endpoint request.
+// @Summary Find file metadata
+// @Description Find specific UHRP file advertisement.
+// @Accept json
+// @Produce json
+// @Param uhrpUrl query string true "UHRP URL of the file to find"
+// @Success 200 {object} findResponse
+// @Failure 400 {object} responses.ErrorResponse
+// @Failure 401 {object} responses.ErrorResponse
+// @Failure 404 {object} responses.ErrorResponse
+// @Failure 500 {object} responses.ErrorResponse
+// @Router /find [get]
 func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	identityKey, err := middleware.ShouldGetIdentity(r.Context())
-	if err != nil || isUnknown(identityKey) {
-		writeError(w, http.StatusBadRequest, "ERR_MISSING_IDENTITY_KEY", "Missing authfetch identityKey.")
+	identityKey := middlewares.GetIdentityKey(r.Context())
+	if identityKey == nil {
+		responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Missing or invalid identityKey.")
 		return
 	}
 
 	uhrpURL := r.URL.Query().Get("uhrpUrl")
 	if uhrpURL == "" {
-		writeError(w, http.StatusBadRequest, "ERR_NO_UHRP_URL", "You must provide a uhrpUrl query parameter")
+		responses.WriteError(w, http.StatusBadRequest, "ERR_NO_UHRP_URL", "You must provide a uhrpUrl query parameter")
 		return
 	}
 
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
-		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
 
 	_, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
+		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
 	}
 
 	now := time.Now().Unix()
 	expiryTime := parseExpiryTime(meta["expiryTime"])
 	if expiryTime > 0 && expiryTime < now {
-		writeError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
+		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, findResponse{
+	responses.WriteJSON(w, http.StatusOK, findResponse{
 		Status: "success",
 		Data: &findData{
 			Name:       meta["objectID"],

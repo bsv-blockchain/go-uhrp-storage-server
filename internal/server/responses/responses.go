@@ -1,4 +1,4 @@
-package handlers
+package responses
 
 import (
 	"encoding/json"
@@ -12,14 +12,16 @@ type ErrorResponse struct {
 	Description string `json:"description,omitempty"`
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+// WriteJSON writes a JSON response.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, code, description string) {
-	writeJSON(w, status, ErrorResponse{
+// WriteError writes an error response.
+func WriteError(w http.ResponseWriter, status int, code, description string) {
+	WriteJSON(w, status, ErrorResponse{
 		Status:      "error",
 		Code:        code,
 		Description: description,

@@ -16,6 +16,17 @@ import (
 	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
+// @title UHRP Storage Server API
+// @version 1.0
+// @description The official UHRP Storage Server implementation in Go, allowing anyone to host their own bitcom-based public file CDN.
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey AuthfetchIdentity
+// @in header
+// @name Authorization
+// @description Authentication via go-bsv-middleware using BRC-43 Authfetch.
+
 func main() {
 	_ = godotenv.Load()
 

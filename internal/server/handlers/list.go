@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 )
 
@@ -27,22 +27,31 @@ type listResponse struct {
 	Desc    string       `json:"description,omitempty"`
 }
 
+// ServeHTTP handles the /list endpoint request.
+// @Summary List user's active file uploads
+// @Description Retrieve a list of all currently active (non-expired) UHRP advertisements created by the authenticated user.
+// @Accept json
+// @Produce json
+// @Success 200 {object} listResponse
+// @Failure 401 {object} responses.ErrorResponse
+// @Failure 500 {object} responses.ErrorResponse
+// @Router /list [get]
 func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	identityKey, err := middleware.ShouldGetIdentity(r.Context())
-	if err != nil || isUnknownKey(identityKey) {
-		writeError(w, http.StatusBadRequest, "ERR_MISSING_IDENTITY_KEY", "Missing authfetch identityKey.")
+	identityKey := middlewares.GetIdentityKey(r.Context())
+	if identityKey == nil {
+		responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Missing or invalid identityKey.")
 		return
 	}
 
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
-		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
 
 	outputs, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
 		return
 	}
 
@@ -63,14 +72,10 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, listResponse{
+	responses.WriteJSON(w, http.StatusOK, listResponse{
 		Status:  "success",
 		Uploads: uploads,
 	})
-}
-
-func isUnknownKey(key *ec.PublicKey) bool {
-	return key == nil || middleware.IsUnknownIdentity(key)
 }
 
 // parseExpiryTime parses an RFC3339 or unix timestamp string.

@@ -12,10 +12,14 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/config"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
+
+	_ "github.com/bsv-blockchain/go-uhrp-storage-server/docs"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // Server represents the UHRP storage HTTP server
@@ -25,7 +29,7 @@ type Server struct {
 
 // New creates and configures a new Server instance
 func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore, wp *wallet.Provider, publicDir string) *Server {
-	mimeMiddleware := &handlers.MimeTypeMiddleware{CDNPath: store.CDNPath()}
+	mimeMiddleware := &middlewares.MimeTypeMiddleware{CDNPath: store.CDNPath()}
 
 	r := chi.NewRouter()
 
@@ -39,6 +43,9 @@ func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore,
 	fileServer := http.FileServer(http.Dir(publicDir))
 	r.Handle("/favicon.ico", fileServer)
 	r.Handle("/cdn/*", fileServer)
+
+	// Swagger Docs
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	// Pre-auth routes (no auth/payment required)
 	registerPreAuthRoutes(cfg, r, store, wp, calc)
@@ -83,6 +90,7 @@ func registerPostAuthRoutes(wp *wallet.Provider, calc *pricing.Calculator, r *ch
 
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware.HTTPHandler)
+		r.Use(middlewares.RequireIdentityKey)
 		r.Use(paymentMiddleware.HTTPHandler)
 
 		r.Post("/upload", (&handlers.UploadHandler{

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
 // UploadHandler handles POST /upload requests.
@@ -38,40 +38,51 @@ type uploadResponse struct {
 	Code            string            `json:"code,omitempty"`
 }
 
+// ServeHTTP handles the /upload endpoint request.
+// @Summary Request an upload URL
+// @Description Get a pre-signed URL and payment details to upload a file to the UHRP storage server.
+// @Accept json
+// @Produce json
+// @Param request body uploadRequest true "File size and desired retention period"
+// @Success 200 {object} uploadResponse
+// @Failure 400 {object} responses.ErrorResponse
+// @Failure 401 {object} responses.ErrorResponse
+// @Failure 500 {object} responses.ErrorResponse
+// @Router /upload [post]
 func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	identityKey, err := middleware.ShouldGetIdentity(r.Context())
-	if err != nil || isUnknown(identityKey) {
-		writeError(w, http.StatusBadRequest, "ERR_MISSING_IDENTITY_KEY", "Missing authfetch identityKey.")
+	identityKey := middlewares.GetIdentityKey(r.Context())
+	if identityKey == nil {
+		responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Missing or invalid identityKey.")
 		return
 	}
 
 	var req uploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "ERR_INVALID_BODY", "Invalid request body.")
+		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_BODY", "Invalid request body.")
 		return
 	}
 
 	if req.FileSize <= 0 {
-		writeError(w, http.StatusBadRequest, "ERR_INVALID_SIZE", "The file size must be a positive integer.")
+		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_SIZE", "The file size must be a positive integer.")
 		return
 	}
 	if req.RetentionPeriod <= 0 {
-		writeError(w, http.StatusBadRequest, "ERR_NO_RETENTION_PERIOD", "You must specify the number of minutes to host the file.")
+		responses.WriteError(w, http.StatusBadRequest, "ERR_NO_RETENTION_PERIOD", "You must specify the number of minutes to host the file.")
 		return
 	}
 	if req.RetentionPeriod < int64(h.MinHostingMinutes) {
-		writeError(w, http.StatusBadRequest, "ERR_INVALID_RETENTION_PERIOD",
+		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_RETENTION_PERIOD",
 			fmt.Sprintf("The retention period must be >= %d minutes", h.MinHostingMinutes))
 		return
 	}
 	if req.FileSize > 11_000_000_000 {
-		writeError(w, http.StatusBadRequest, "ERR_INVALID_SIZE", "Max supported file size is 11000000000 bytes.")
+		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_SIZE", "Max supported file size is 11000000000 bytes.")
 		return
 	}
 
 	amount, err := h.Calculator.GetPrice(req.FileSize, req.RetentionPeriod)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ERR_INTERNAL_UPLOAD", "An internal error occurred while handling upload.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL_UPLOAD", "An internal error occurred while handling upload.")
 		return
 	}
 
@@ -87,7 +98,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hmac := ""
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
-		writeError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
 	hmacResult, hmacErr := wallet.CreateHMAC(r.Context(), sdkWallet.CreateHMACArgs{
@@ -102,7 +113,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Data: []byte(queryStr),
 	}, "")
 	if hmacErr != nil {
-		writeError(w, http.StatusInternalServerError, "ERR_HMAC", "Failed to create HMAC.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_HMAC", "Failed to create HMAC.")
 		return
 	}
 	hmac = hex.EncodeToString(hmacResult.HMAC[:])
@@ -113,17 +124,13 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	uploadURL := fmt.Sprintf("%s%s/put?%s&hmac=%s", scheme, h.HostingDomain, queryStr, hmac)
 
-	writeJSON(w, http.StatusOK, uploadResponse{
+	responses.WriteJSON(w, http.StatusOK, uploadResponse{
 		Status:          "success",
 		UploadURL:       uploadURL,
 		RequiredHeaders: map[string]string{},
 		Amount:          amount,
 		Description:     "File can now be uploaded.",
 	})
-}
-
-func isUnknown(key *ec.PublicKey) bool {
-	return key == nil || middleware.IsUnknownIdentity(key)
 }
 
 func randomBytes(n int) []byte {
