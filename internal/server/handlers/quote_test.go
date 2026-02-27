@@ -6,12 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/pricing"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
+
+type mockOracle struct{}
+
+func (m mockOracle) GetExchangeRate() float64 {
+	return 30.0
+}
 
 func TestQuoteHandler_MissingFileSize(t *testing.T) {
 	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03),
+		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
 		MinHostingMinutes: 0,
 	}
 	body := `{"retentionPeriod": 60}`
@@ -26,7 +32,7 @@ func TestQuoteHandler_MissingFileSize(t *testing.T) {
 
 func TestQuoteHandler_MissingRetention(t *testing.T) {
 	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03),
+		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
 		MinHostingMinutes: 0,
 	}
 	body := `{"fileSize": 1024}`
@@ -41,7 +47,7 @@ func TestQuoteHandler_MissingRetention(t *testing.T) {
 
 func TestQuoteHandler_RetentionTooLarge(t *testing.T) {
 	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03),
+		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
 		MinHostingMinutes: 0,
 	}
 	body := `{"fileSize": 1024, "retentionPeriod": 70000000}`
@@ -56,7 +62,7 @@ func TestQuoteHandler_RetentionTooLarge(t *testing.T) {
 
 func TestQuoteHandler_ValidRequest(t *testing.T) {
 	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03),
+		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
 		MinHostingMinutes: 0,
 	}
 	body := `{"fileSize": 1024, "retentionPeriod": 60}`

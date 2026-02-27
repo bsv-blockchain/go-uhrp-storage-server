@@ -2,16 +2,15 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/pricing"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
+	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
 // RequestPriceCalculator returns a function compatible with the go-bsv-middleware calculating the required price for a request.
@@ -44,7 +43,7 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 					return 0, fmt.Errorf("wallet not available for renew price calculation")
 				}
 
-				fileSize, err := getFileSize(req.Context(), wallet, payload.UhrpURL)
+				fileSize, err := walletpkg.GetFileSize(req.Context(), wallet, payload.UhrpURL)
 				if err != nil {
 					return 0, err
 				}
@@ -60,36 +59,4 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 		// Defaults to 0 if we can't calculate it or the route doesn't require payment (e.g., /list, /find)
 		return 0, nil
 	}
-}
-
-func getFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string) (int64, error) {
-	includeCustom := true
-	includeTags := true
-	includeLocking := sdkWallet.OutputIncludeLockingScripts
-	listResult, err := wallet.ListOutputs(ctx, sdkWallet.ListOutputsArgs{
-		Basket:                    "uhrp advertisements",
-		Include:                   includeLocking,
-		IncludeCustomInstructions: &includeCustom,
-		IncludeTags:               &includeTags,
-		Tags:                      []string{fmt.Sprintf("uhrpUrl_%s", uhrpURL)},
-	}, "")
-	if err != nil {
-		return 0, fmt.Errorf("failed to query wallet outputs: %w", err)
-	}
-
-	var fileSize int64
-	matchFound := false
-	for _, out := range listResult.Outputs {
-		m := parseCustomInstructions(out.CustomInstructions)
-		if m != nil && m["uhrpURL"] == uhrpURL {
-			fmt.Sscanf(m["fileSize"], "%d", &fileSize)
-			matchFound = true
-			break
-		}
-	}
-
-	if !matchFound {
-		return 0, fmt.Errorf("uhrpUrl not found in wallet outputs")
-	}
-	return fileSize, nil
 }

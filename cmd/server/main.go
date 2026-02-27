@@ -2,26 +2,30 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"net/http"
 	"path/filepath"
 	"runtime"
-	"time"
 
-	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
-	"github.com/bsv-blockchain/go-sdk/auth"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/config"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/handlers"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/pricing"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
+
+// @title UHRP Storage Server API
+// @version 1.0
+// @description The official UHRP Storage Server implementation in Go, allowing anyone to host their own public file CDN.
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey AuthfetchIdentity
+// @in header
+// @name Authorization
+// @description Authentication via go-bsv-middleware using BRC-43 Authfetch.
 
 func main() {
 	_ = godotenv.Load()
@@ -36,7 +40,8 @@ func main() {
 	publicDir := filepath.Join(filepath.Dir(filename), "..", "..", "public")
 
 	// Initialize components
-	calc := pricing.NewCalculator(cfg.PricePerGBMonth)
+	exchangeRateProvider := pricing.NewWhatsOnChainProvider()
+	calc := pricing.NewCalculator(cfg.PricePerGBMonth, exchangeRateProvider)
 	store := storage.NewFileStore(publicDir)
 	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork)
 
@@ -50,80 +55,6 @@ func main() {
 		log.Println("WARNING: SERVER_PRIVATE_KEY or WALLET_STORAGE_URL not set; wallet features disabled.")
 	}
 
-	mimeMiddleware := &handlers.MimeTypeMiddleware{CDNPath: store.CDNPath()}
-
-	r := chi.NewRouter()
-
-	// Global middleware
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
-	r.Use(corsMiddleware)
-
-	// CDN MIME type middleware + static files
-	r.Use(mimeMiddleware.Handle)
-	fileServer := http.FileServer(http.Dir(publicDir))
-	r.Handle("/favicon.ico", fileServer)
-	r.Handle("/cdn/*", fileServer)
-
-	// === Pre-auth routes (no auth/payment required) ===
-
-	// PUT /put - file upload via presigned URL
-	r.Put("/put", (&handlers.PutHandler{
-		Store:          store,
-		WalletProvider: wp,
-		HostingDomain:  cfg.HostingDomain,
-	}).ServeHTTP)
-
-	// POST /quote - get storage price quote
-	r.Post("/quote", (&handlers.QuoteHandler{
-		Calculator:        calc,
-		MinHostingMinutes: cfg.MinHostingMinutes,
-	}).ServeHTTP)
-
-	// === Post-auth routes (require auth + payment middleware) ===
-	if wp.GetWallet() != nil {
-		sessionManager := auth.NewSessionManager()
-		authMiddleware := middleware.NewAuth(wp.GetWallet(), middleware.WithAuthSessionManager(sessionManager))
-		paymentMiddleware := middleware.NewPayment(wp.GetWallet(), middleware.WithRequestPriceCalculator(
-			handlers.RequestPriceCalculator(calc, wp),
-		))
-
-		// The auth middleware intercepts this path to perform the DPP handshake.
-		r.Handle("/.well-known/auth", authMiddleware.HTTPHandler(http.NotFoundHandler()))
-
-		r.Group(func(r chi.Router) {
-			r.Use(authMiddleware.HTTPHandler)
-			r.Use(paymentMiddleware.HTTPHandler)
-
-			r.Post("/upload", (&handlers.UploadHandler{
-				Calculator:        calc,
-				WalletProvider:    wp,
-				HostingDomain:     cfg.HostingDomain,
-				MinHostingMinutes: cfg.MinHostingMinutes,
-			}).ServeHTTP)
-
-			r.Get("/list", (&handlers.ListHandler{
-				WalletProvider: wp,
-			}).ServeHTTP)
-
-			r.Post("/renew", (&handlers.RenewHandler{
-				Calculator:     calc,
-				WalletProvider: wp,
-			}).ServeHTTP)
-
-			r.Get("/find", (&handlers.FindHandler{
-				WalletProvider: wp,
-			}).ServeHTTP)
-		})
-	}
-
-	// 404 handler
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, `{"status":"error","code":"ERR_ROUTE_NOT_FOUND","description":"Route not found."}`)
-	})
-
 	// Log identity key
 	if cfg.ServerPrivateKey != "" {
 		privKey, err := ec.PrivateKeyFromHex(cfg.ServerPrivateKey)
@@ -132,29 +63,8 @@ func main() {
 		}
 	}
 
-	server := &http.Server{
-		Addr:              ":" + cfg.HTTPPort,
-		Handler:           r,
-		ReadHeaderTimeout: 30 * time.Second,
-	}
-
-	log.Printf("UHRP Storage Server listening on port %s", cfg.HTTPPort)
-	if err := server.ListenAndServe(); err != nil {
+	srv := server.New(cfg, calc, store, wp, publicDir)
+	if err := srv.Start(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Private-Network", "true")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
