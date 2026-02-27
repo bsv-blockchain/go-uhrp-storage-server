@@ -119,7 +119,7 @@ host: localhost:8080
 info:
   contact: {}
   description: The official UHRP Storage Server implementation in Go, allowing anyone
-    to host their own bitcom-based public file CDN.
+    to host their own public file CDN.
   title: UHRP Storage Server API
   version: "1.0"
 paths:
@@ -127,8 +127,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Find metadata (size, mimeType, expiry) for a specific UHRP file
-        advertisement.
+      description: Find specific UHRP file advertisement.
       parameters:
       - description: UHRP URL of the file to find
         in: query

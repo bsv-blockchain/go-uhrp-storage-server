@@ -18,7 +18,7 @@ import (
 
 // @title UHRP Storage Server API
 // @version 1.0
-// @description The official UHRP Storage Server implementation in Go, allowing anyone to host their own bitcom-based public file CDN.
+// @description The official UHRP Storage Server implementation in Go, allowing anyone to host their own public file CDN.
 // @host localhost:8080
 // @BasePath /
 

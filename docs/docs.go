@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/find": {
             "get": {
-                "description": "Find metadata (size, mimeType, expiry) for a specific UHRP file advertisement.",
+                "description": "Find specific UHRP file advertisement.",
                 "consumes": [
                     "application/json"
                 ],
@@ -522,7 +522,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "UHRP Storage Server API",
-	Description:      "The official UHRP Storage Server implementation in Go, allowing anyone to host their own bitcom-based public file CDN.",
+	Description:      "The official UHRP Storage Server implementation in Go, allowing anyone to host their own public file CDN.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
