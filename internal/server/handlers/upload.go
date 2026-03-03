@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	base58 "github.com/bsv-blockchain/go-sdk/compat/base58"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
@@ -86,7 +87,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	objectIdentifier := toBase58(randomBytes(16))
+	objectIdentifier := base58.Encode(randomBytes(16))
 	expiryTime := (req.RetentionPeriod * 60) + time.Now().Unix()
 	customTime := time.Unix(expiryTime+300, 0).UTC().Format(time.RFC3339)
 
@@ -105,9 +106,9 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		EncryptionArgs: sdkWallet.EncryptionArgs{
 			ProtocolID: sdkWallet.Protocol{
 				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-				Protocol:      "uhrp file hosting",
+				Protocol:      "storage upload",
 			},
-			KeyID:        objectIdentifier,
+			KeyID:        "1",
 			Counterparty: sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeSelf},
 		},
 		Data: []byte(queryStr),
@@ -137,49 +138,4 @@ func randomBytes(n int) []byte {
 	b := make([]byte, n)
 	rand.Read(b)
 	return b
-}
-
-// toBase58 encodes bytes to base58 (Bitcoin alphabet).
-func toBase58(data []byte) string {
-	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-	if len(data) == 0 {
-		return ""
-	}
-
-	// Count leading zeros
-	zeros := 0
-	for _, b := range data {
-		if b != 0 {
-			break
-		}
-		zeros++
-	}
-
-	// Convert to big integer and encode
-	size := len(data)*138/100 + 1
-	buf := make([]byte, size)
-	for _, b := range data {
-		carry := int(b)
-		for i := size - 1; i >= 0; i-- {
-			carry += 256 * int(buf[i])
-			buf[i] = byte(carry % 58)
-			carry /= 58
-		}
-	}
-
-	// Skip leading zeros in buf
-	i := 0
-	for i < size && buf[i] == 0 {
-		i++
-	}
-
-	// Build result
-	result := make([]byte, zeros+size-i)
-	for j := 0; j < zeros; j++ {
-		result[j] = '1'
-	}
-	for j := zeros; i < size; i, j = i+1, j+1 {
-		result[j] = alphabet[buf[i]]
-	}
-	return string(result)
 }
