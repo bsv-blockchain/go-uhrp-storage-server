@@ -59,14 +59,14 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL)
+	_, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex())
 	if err != nil {
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
 	}
 
 	now := time.Now().Unix()
-	expiryTime := parseExpiryTime(meta["expiryTime"])
+	expiryTime := meta.ExpiryTime
 	if expiryTime > 0 && expiryTime < now {
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
@@ -75,9 +75,9 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	responses.WriteJSON(w, http.StatusOK, findResponse{
 		Status: "success",
 		Data: &findData{
-			Name:       meta["objectID"],
-			Size:       meta["fileSize"],
-			MimeType:   meta["contentType"],
+			Name:       meta.ObjectIdentifier,
+			Size:       meta.Size,
+			MimeType:   meta.ContentType,
 			ExpiryTime: expiryTime,
 		},
 	})

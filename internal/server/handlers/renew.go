@@ -71,7 +71,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Find the existing advertisement via FindAdvertisementByUhrpURL
-	matchedOutputPtr, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL)
+	output, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex())
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No advertisement found for the given uhrpUrl.")
@@ -80,12 +80,11 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	matchedOutput := *matchedOutputPtr
 
 	// 2. Calculate pricing
-	prevExpiry := parseExpiryTime(meta["expiryTime"])
+	prevExpiry := meta.ExpiryTime
 	var fileSize int64
-	fmt.Sscanf(meta["fileSize"], "%d", &fileSize)
+	fmt.Sscanf(meta.Size, "%d", &fileSize)
 
 	amount, err := h.Calculator.GetPrice(fileSize, req.AdditionalMinutes)
 	if err != nil {
@@ -98,16 +97,15 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Renew the advertisement via walletpkg
 	p := walletpkg.CreateAdParams{
-		UhrpURL:       meta["uhrpURL"],
-		HostingDomain: meta["hostingDomain"],
+		URL:           req.UhrpURL,
 		ExpirySecs:    newExpiry,
-		ContentType:   meta["contentType"],
-		FileSize:      fileSize,
-		ObjectID:      meta["objectID"],
-		Uploader:      meta["uploader"],
+		ContentType:   meta.ContentType,
+		ContentLength: fileSize,
+		ObjectID:      meta.ObjectIdentifier,
+		Uploader:      identityKey.ToDERHex(),
 	}
 
-	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, matchedOutput, p); err != nil {
+	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, *output, p); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL_RENEW", "An error occurred while handling the renewal.")
 		return
 	}

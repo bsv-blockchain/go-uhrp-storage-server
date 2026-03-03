@@ -1,16 +1,18 @@
 package handlers
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	crypto "github.com/bsv-blockchain/go-sdk/primitives/hash"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/uhrp"
 )
 
 // PutHandler handles PUT /put requests for file upload.
@@ -91,28 +93,37 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create UHRP advertisement
-	if strings.HasPrefix(h.HostingDomain, "localhost") {
-		log.Println("Not advertising, localhost")
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL",
-			"An internal error occurred while processing the request.")
-		return
-	}
+	// TODO: remove this check after development phase
+	// if strings.HasPrefix(h.HostingDomain, "localhost") {
+	// 	log.Println("Not advertising, localhost")
+	// 	responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL",
+	// 		"An internal error occurred while processing the request.")
+	// 	return
+	// }
 
-	hash := uhrp.HashData(body)
+	hash := crypto.Sha256(body)
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	uhrpURL := uhrp.GetURLForHash(hash)
+	var expiryInt int64
+	if t, err := time.Parse(time.RFC3339, expiry); err == nil {
+		expiryInt = t.Unix()
+	} else {
+		expiryInt, err = strconv.ParseInt(expiry, 10, 64)
+		if err != nil {
+			responses.WriteError(w, http.StatusBadRequest, "", "Invalid expiry")
+			return
+		}
+	}
 
-	expiryInt, _ := strconv.ParseInt(expiry, 10, 64)
 	err = walletpkg.CreateAdvertisement(r.Context(), wallet, walletpkg.CreateAdParams{
-		UhrpURL:       uhrpURL,
-		HostingDomain: h.HostingDomain,
+		Hash:          hash,
+		URL:           fmt.Sprintf("https://%s/cdn/%s", h.HostingDomain, objectID),
 		ExpirySecs:    expiryInt,
 		ContentType:   contentType,
-		FileSize:      fileSize,
+		ContentLength: fileSize,
 		ObjectID:      objectID,
 		Uploader:      uploader,
 	})
