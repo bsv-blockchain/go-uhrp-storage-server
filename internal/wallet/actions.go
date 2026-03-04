@@ -2,7 +2,6 @@ package wallet
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"log"
 
@@ -21,39 +20,6 @@ type CreateAdParams struct {
 	ContentLength int64
 	ObjectID      string
 	Uploader      string
-}
-
-// VerifyUploaderHMAC verifies that the uploader provided a valid HMAC over the file metadata.
-func VerifyUploaderHMAC(ctx context.Context, wallet sdkWallet.Interface, fileSizeStr, objectID, expiry, uploader, hmacHex string) error {
-	str := fmt.Sprintf("fileSize=%s&objectID=%s&expiry=%s&uploader=%s", fileSizeStr, objectID, expiry, uploader)
-
-	hmacBytes, err := hex.DecodeString(hmacHex)
-	if err != nil || len(hmacBytes) != 32 {
-		return fmt.Errorf("invalid HMAC format")
-	}
-	var hmacArr [32]byte
-	copy(hmacArr[:], hmacBytes)
-
-	verifyResult, err := wallet.VerifyHMAC(ctx, sdkWallet.VerifyHMACArgs{
-		EncryptionArgs: sdkWallet.EncryptionArgs{
-			ProtocolID: sdkWallet.Protocol{
-				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-				Protocol:      "storage upload",
-			},
-			KeyID:        "1",
-			Counterparty: sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeSelf},
-		},
-		Data: []byte(str),
-		HMAC: hmacArr,
-	}, "")
-	if err != nil {
-		return fmt.Errorf("HMAC verification failed: %w", err)
-	}
-	if !verifyResult.Valid {
-		return fmt.Errorf("invalid HMAC")
-	}
-
-	return nil
 }
 
 // CreateAdvertisement constructs the PushDrop script and executes a CreateAction wallet call to mint an advertisement.
@@ -78,7 +44,6 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 				OutputDescription: "UHRP advertisement token",
 				Basket:            "uhrp advertisements",
 				Tags: []string{
-					// fmt.Sprintf("uhrp_url_%s", p.URL),
 					fmt.Sprintf("uhrp_url_%s", uhrpURL),
 					fmt.Sprintf("object_identifier_%s", p.ObjectID),
 					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
@@ -135,7 +100,6 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p CreateAdParams) (*script.Script, error) {
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
-		// Originator: "",
 	}
 
 	pubKey, err := wallet.GetPublicKey(ctx, sdkWallet.GetPublicKeyArgs{IdentityKey: true}, "uhrp-server")

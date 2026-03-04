@@ -93,13 +93,12 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create UHRP advertisement
-	// TODO: remove this check after development phase
-	// if strings.HasPrefix(h.HostingDomain, "localhost") {
-	// 	log.Println("Not advertising, localhost")
-	// 	responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL",
-	// 		"An internal error occurred while processing the request.")
-	// 	return
-	// }
+	if strings.HasPrefix(h.HostingDomain, "localhost") {
+		log.Println("Not advertising, localhost")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL",
+			"An internal error occurred while processing the request.")
+		return
+	}
 
 	hash := crypto.Sha256(body)
 	contentType := r.Header.Get("Content-Type")

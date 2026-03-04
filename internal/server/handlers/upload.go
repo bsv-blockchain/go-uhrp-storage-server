@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	base58 "github.com/bsv-blockchain/go-sdk/compat/base58"
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
@@ -96,28 +94,17 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req.FileSize, objectIdentifier, customTime, uploaderKey)
 
 	// Create HMAC using the wallet to secure the upload URL
-	hmac := ""
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
-	hmacResult, hmacErr := wallet.CreateHMAC(r.Context(), sdkWallet.CreateHMACArgs{
-		EncryptionArgs: sdkWallet.EncryptionArgs{
-			ProtocolID: sdkWallet.Protocol{
-				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-				Protocol:      "storage upload",
-			},
-			KeyID:        "1",
-			Counterparty: sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeSelf},
-		},
-		Data: []byte(queryStr),
-	}, "")
-	if hmacErr != nil {
+
+	hmac, err := walletpkg.CreateUploaderHMAC(r.Context(), wallet, queryStr)
+	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_HMAC", "Failed to create HMAC.")
 		return
 	}
-	hmac = hex.EncodeToString(hmacResult.HMAC[:])
 
 	scheme := "https://"
 	if strings.HasPrefix(h.HostingDomain, "localhost") {

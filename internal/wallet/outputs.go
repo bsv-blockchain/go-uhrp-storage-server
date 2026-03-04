@@ -44,28 +44,8 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 	}
 
 	output := listResult.Outputs[0]
-	response := FileMetadata{}
 
-	for _, tag := range output.Tags {
-		if strings.HasPrefix(tag, "uhrp_url_") {
-			response.URL = strings.TrimPrefix(tag, "uhrp_url_")
-		}
-		if strings.HasPrefix(tag, "object_identifier_") {
-			response.ObjectIdentifier = strings.TrimPrefix(tag, "object_identifier_")
-		}
-		if strings.HasPrefix(tag, "expiry_time_") {
-			response.ExpiryTime, _ = strconv.ParseInt(strings.TrimPrefix(tag, "expiry_time_"), 10, 64)
-		}
-		if strings.HasPrefix(tag, "name_") {
-			response.Name = strings.TrimPrefix(tag, "name_")
-		}
-		if strings.HasPrefix(tag, "size_") {
-			response.Size = strings.TrimPrefix(tag, "size_")
-		}
-		if strings.HasPrefix(tag, "content_type_") {
-			response.ContentType = strings.TrimPrefix(tag, "content_type_")
-		}
-	}
+	response := mapOutputToMetadata(output)
 
 	return &output, &response, nil
 }
@@ -99,31 +79,35 @@ func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interfac
 	metadatas := make([]FileMetadata, 0)
 
 	for _, output := range result.Outputs {
-
-		meta := FileMetadata{}
-		for _, tag := range output.Tags {
-			if strings.HasPrefix(tag, "uhrp_url_") {
-				meta.URL = strings.TrimPrefix(tag, "uhrp_url_")
-			}
-			if strings.HasPrefix(tag, "object_identifier_") {
-				meta.ObjectIdentifier = strings.TrimPrefix(tag, "object_identifier_")
-			}
-			if strings.HasPrefix(tag, "expiry_time_") {
-				meta.ExpiryTime, _ = strconv.ParseInt(strings.TrimPrefix(tag, "expiry_time_"), 10, 64)
-			}
-			if strings.HasPrefix(tag, "name_") {
-				meta.Name = strings.TrimPrefix(tag, "name_")
-			}
-			if strings.HasPrefix(tag, "size_") {
-				meta.Size = strings.TrimPrefix(tag, "size_")
-			}
-			if strings.HasPrefix(tag, "content_type_") {
-				meta.ContentType = strings.TrimPrefix(tag, "content_type_")
-			}
-		}
-
-		metadatas = append(metadatas, meta)
+		metadatas = append(metadatas, mapOutputToMetadata(output))
 	}
 
 	return metadatas, nil
+}
+
+func mapOutputToMetadata(output sdkWallet.Output) FileMetadata {
+	response := FileMetadata{}
+
+	for _, tag := range output.Tags {
+		if strings.HasPrefix(tag, "uhrp_url_") {
+			response.URL = strings.TrimPrefix(tag, "uhrp_url_")
+		}
+		if strings.HasPrefix(tag, "object_identifier_") {
+			response.ObjectIdentifier = strings.TrimPrefix(tag, "object_identifier_")
+		}
+		if strings.HasPrefix(tag, "expiry_time_") {
+			response.ExpiryTime, _ = strconv.ParseInt(strings.TrimPrefix(tag, "expiry_time_"), 10, 64)
+		}
+		if strings.HasPrefix(tag, "name_") {
+			response.Name = strings.TrimPrefix(tag, "name_")
+		}
+		if strings.HasPrefix(tag, "size_") {
+			response.Size = strings.TrimPrefix(tag, "size_")
+		}
+		if strings.HasPrefix(tag, "content_type_") {
+			response.ContentType = strings.TrimPrefix(tag, "content_type_")
+		}
+	}
+
+	return response
 }
