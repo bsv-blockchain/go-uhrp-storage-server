@@ -22,7 +22,7 @@ type listUpload struct {
 
 type listResponse struct {
 	Status  string       `json:"status"`
-	Uploads []listUpload `json:"uploads,omitempty"`
+	Uploads []listUpload `json:"uploads"`
 	Code    string       `json:"code,omitempty"`
 	Desc    string       `json:"description,omitempty"`
 }
@@ -49,7 +49,7 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outputs, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex())
+	metadatas, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex())
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
 		return
@@ -57,18 +57,13 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().Unix()
 	uploads := make([]listUpload, 0)
-	for _, out := range outputs {
-		meta := walletpkg.ParseCustomInstructions(out.CustomInstructions)
-		if meta == nil {
-			continue
-		}
-		expiryTime := parseExpiryTime(meta["expiryTime"])
-		if expiryTime > 0 && expiryTime < now {
+	for _, meta := range metadatas {
+		if meta.ExpiryTime > 0 && meta.ExpiryTime < now {
 			continue // expired
 		}
 		uploads = append(uploads, listUpload{
-			UhrpURL:    meta["uhrpURL"],
-			ExpiryTime: expiryTime,
+			UhrpURL:    meta.URL,
+			ExpiryTime: meta.ExpiryTime,
 		})
 	}
 

@@ -2,90 +2,56 @@ package wallet
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 
 	"github.com/bsv-blockchain/go-sdk/script"
+	"github.com/bsv-blockchain/go-sdk/storage"
+	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
 
 // CreateAdParams holds the arguments needed to create a new UHRP advertisement Action.
 type CreateAdParams struct {
-	UhrpURL       string
-	HostingDomain string
+	Hash          []byte
+	URL           string
 	ExpirySecs    int64
 	ContentType   string
-	FileSize      int64
+	ContentLength int64
 	ObjectID      string
 	Uploader      string
 }
 
-// VerifyUploaderHMAC verifies that the uploader provided a valid HMAC over the file metadata.
-func VerifyUploaderHMAC(ctx context.Context, wallet sdkWallet.Interface, fileSizeStr, objectID, expiry, uploader, hmacHex string) error {
-	str := fmt.Sprintf("fileSize=%s&objectID=%s&expiry=%s&uploader=%s", fileSizeStr, objectID, expiry, uploader)
-
-	hmacBytes, err := hex.DecodeString(hmacHex)
-	if err != nil || len(hmacBytes) != 32 {
-		return fmt.Errorf("invalid HMAC format")
-	}
-	var hmacArr [32]byte
-	copy(hmacArr[:], hmacBytes)
-
-	verifyResult, err := wallet.VerifyHMAC(ctx, sdkWallet.VerifyHMACArgs{
-		EncryptionArgs: sdkWallet.EncryptionArgs{
-			ProtocolID: sdkWallet.Protocol{
-				SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-				Protocol:      "uhrp file hosting",
-			},
-			KeyID:        objectID,
-			Counterparty: sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeSelf},
-		},
-		Data: []byte(str),
-		HMAC: hmacArr,
-	}, "")
-	if err != nil {
-		return fmt.Errorf("HMAC verification failed: %w", err)
-	}
-	if !verifyResult.Valid {
-		return fmt.Errorf("invalid HMAC")
-	}
-
-	return nil
-}
-
 // CreateAdvertisement constructs the PushDrop script and executes a CreateAction wallet call to mint an advertisement.
 func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p CreateAdParams) error {
-	expiryStr := fmt.Sprintf("%d", p.ExpirySecs)
-	fileSizeStr := fmt.Sprintf("%d", p.FileSize)
-
-	lockingScript, err := buildPushDropScript(p.UhrpURL, p.HostingDomain, expiryStr, p.ContentType, fileSizeStr, p.ObjectID, p.Uploader)
+	lockingScript, err := buildPushDropScript(ctx, wallet, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
-	customInstructions := map[string]string{
-		"uhrpURL":       p.UhrpURL,
-		"hostingDomain": p.HostingDomain,
-		"expiryTime":    expiryStr,
-		"contentType":   p.ContentType,
-		"fileSize":      fileSizeStr,
-		"objectID":      p.ObjectID,
-		"uploader":      p.Uploader,
+	// TODO: check if this URL should be added or the actual one where the file is stored
+	uhrpURL, err := storage.GetURLForHash(p.Hash)
+	if err != nil {
+		return fmt.Errorf("failed to get URL for hash: %w", err)
 	}
-	b, _ := json.Marshal(customInstructions)
 
 	_, err = wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
-		Description: fmt.Sprintf("UHRP advertisement for %s", p.UhrpURL),
+		Description: "UHRP Content Availability Advertisement",
 		Outputs: []sdkWallet.CreateActionOutput{
 			{
-				LockingScript:      lockingScript,
-				Satoshis:           1,
-				OutputDescription:  "UHRP advertisement token",
-				Basket:             "uhrp advertisements",
-				CustomInstructions: string(b),
-				Tags:               []string{"uhrp-ad", fmt.Sprintf("uploader-%s", p.Uploader)},
+				LockingScript:     lockingScript.Bytes(),
+				Satoshis:          1,
+				OutputDescription: "UHRP advertisement token",
+				Basket:            "uhrp advertisements",
+				Tags: []string{
+					fmt.Sprintf("uhrp_url_%s", uhrpURL),
+					fmt.Sprintf("object_identifier_%s", p.ObjectID),
+					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
+					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
+					"name_file",
+					fmt.Sprintf("content_type_%s", p.ContentType),
+					fmt.Sprintf("size_%d", p.ContentLength),
+				},
 			},
 		},
 		Labels: []string{"uhrp-advertisement"},
@@ -99,27 +65,13 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 
 // RenewAdvertisement consumes an existing advertisement output and creates a new one with the updated script.
 func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matchedOutput sdkWallet.Output, p CreateAdParams) error {
-	expiryStr := fmt.Sprintf("%d", p.ExpirySecs)
-	fileSizeStr := fmt.Sprintf("%d", p.FileSize)
-
-	lockingScript, err := buildPushDropScript(p.UhrpURL, p.HostingDomain, expiryStr, p.ContentType, fileSizeStr, p.ObjectID, p.Uploader)
+	lockingScript, err := buildPushDropScript(ctx, wallet, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
-	customInstructions := map[string]string{
-		"uhrpURL":       p.UhrpURL,
-		"hostingDomain": p.HostingDomain,
-		"expiryTime":    expiryStr,
-		"contentType":   p.ContentType,
-		"fileSize":      fileSizeStr,
-		"objectID":      p.ObjectID,
-		"uploader":      p.Uploader,
-	}
-	b, _ := json.Marshal(customInstructions)
-
 	_, err = wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
-		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.UhrpURL),
+		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.URL),
 		Inputs: []sdkWallet.CreateActionInput{
 			{
 				Outpoint:         matchedOutput.Outpoint,
@@ -128,12 +80,11 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		},
 		Outputs: []sdkWallet.CreateActionOutput{
 			{
-				LockingScript:      lockingScript,
-				Satoshis:           1,
-				OutputDescription:  "Renewed UHRP advertisement token",
-				Basket:             "uhrp advertisements",
-				CustomInstructions: string(b),
-				Tags:               matchedOutput.Tags,
+				LockingScript:     lockingScript.Bytes(),
+				Satoshis:          1,
+				OutputDescription: "Renewed UHRP advertisement token",
+				Basket:            "uhrp advertisements",
+				Tags:              matchedOutput.Tags,
 			},
 		},
 		Labels: []string{"uhrp-advertisement", "uhrp-renewal"},
@@ -145,16 +96,50 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 	return nil
 }
 
-// buildPushDropScript builds an OP_RETURN-based script with push data fields (original implementation).
-func buildPushDropScript(uhrpURL, hostingDomain, expiry, contentType, fileSize, objectID, uploader string) ([]byte, error) {
-	s := &script.Script{}
-	if err := s.AppendOpcodes(script.OpFALSE, script.OpRETURN); err != nil {
+// buildPushDropScript builds a PushDrop-compatible locking script using the go-sdk template.
+func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p CreateAdParams) (*script.Script, error) {
+	pd := &pushdrop.PushDrop{
+		Wallet: wallet,
+	}
+
+	pubKey, err := wallet.GetPublicKey(ctx, sdkWallet.GetPublicKeyArgs{IdentityKey: true}, "uhrp-server")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	// Comply with the UHRP Protocol and TS version
+	fields := [][]byte{
+		// The identity Key of the storage host
+		[]byte(pubKey.PublicKey.ToDERHex()),
+		// The hash of the file
+		p.Hash,
+		// The URL of the file
+		[]byte(p.URL),
+		// The expiry time of the advertisement
+		[]byte(fmt.Sprintf("%d", p.ExpirySecs)),
+		// The size of the file
+		[]byte(fmt.Sprintf("%d", p.ContentLength)),
+	}
+
+	protocolID := sdkWallet.Protocol{
+		SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
+		Protocol:      "uhrp advertisement",
+	}
+
+	lockScript, err := pd.Lock(
+		ctx,
+		fields,
+		protocolID,
+		"1",
+		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
+		true,
+		true,
+		pushdrop.LockBefore,
+	)
+
+	if err != nil {
 		return nil, err
 	}
-	for _, field := range []string{uhrpURL, hostingDomain, expiry, contentType, fileSize, objectID, uploader} {
-		if err := s.AppendPushDataString(field); err != nil {
-			return nil, err
-		}
-	}
-	return *s, nil
+
+	return lockScript, nil
 }
