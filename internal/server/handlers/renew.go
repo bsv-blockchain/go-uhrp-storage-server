@@ -71,7 +71,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Find the existing advertisement via FindAdvertisementByUhrpURL
-	output, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex())
+	output, meta, beef, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex())
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No advertisement found for the given uhrpUrl.")
@@ -105,7 +105,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Uploader:      identityKey.ToDERHex(),
 	}
 
-	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, *output, p); err != nil {
+	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, output, beef, p); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL_RENEW", "An error occurred while handling the renewal.")
 		return
 	}
