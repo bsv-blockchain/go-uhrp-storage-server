@@ -8,9 +8,23 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/storage"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
+
+const (
+	WalletName             = "uhrp-server"
+	BasketName             = "uhrp advertisements"
+	BaseAdvertisementLabel = "uhrp-advertisement"
+	RenewalLabel           = "uhrp-renewal"
+	ProtocolID             = "uhrp advertisement"
+)
+
+var Protocol = sdkWallet.Protocol{
+	SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
+	Protocol:      ProtocolID,
+}
 
 // CreateAdParams holds the arguments needed to create a new UHRP advertisement Action.
 type CreateAdParams struct {
@@ -30,7 +44,6 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
-	// TODO: check if this URL should be added or the actual one where the file is stored
 	uhrpURL, err := storage.GetURLForHash(p.Hash)
 	if err != nil {
 		return fmt.Errorf("failed to get URL for hash: %w", err)
@@ -43,24 +56,28 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 				LockingScript:     lockingScript.Bytes(),
 				Satoshis:          1,
 				OutputDescription: "UHRP advertisement token",
-				Basket:            "uhrp advertisements",
+				Basket:            BasketName,
 				Tags: []string{
 					fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
 					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
 					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
 					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
+					// TODO: maybe actual name should be added as a tag
 					"name_file",
 					fmt.Sprintf("content_type_%s", p.ContentType),
 					fmt.Sprintf("size_%d", p.ContentLength),
 				},
 			},
 		},
-		Labels: []string{"uhrp-advertisement"},
+		Labels: []string{BaseAdvertisementLabel},
 	}, "")
 	if err != nil {
 		log.Printf("Failed to create UHRP advertisement: %v", err)
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
+
+	// TODO: create SHIPBroadcaster to broadcast the transaction to the network
+
 	return nil
 }
 
@@ -75,7 +92,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
-	_, err = wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
+	result, err := wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
 		InputBEEF:   beef,
 		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.URL),
 		Inputs: []sdkWallet.CreateActionInput{
@@ -90,16 +107,38 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 				LockingScript:     lockingScript.Bytes(),
 				Satoshis:          1,
 				OutputDescription: "Renewed UHRP advertisement token",
-				Basket:            "uhrp advertisements",
+				Basket:            BasketName,
 				Tags:              matchedOutput.Tags,
 			},
 		},
-		Labels: []string{"uhrp-advertisement", "uhrp-renewal"},
+		Labels: []string{BaseAdvertisementLabel, RenewalLabel},
 	}, "")
 	if err != nil {
 		log.Printf("Failed to renew UHRP advertisement: %v", err)
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
+
+	unlockingScript, err := buildPushDropUnlockingScript(ctx, wallet, result)
+	if err != nil {
+		return fmt.Errorf("failed to build unlocking script: %w", err)
+	}
+
+	_, err = wallet.SignAction(
+		ctx,
+		sdkWallet.SignActionArgs{
+			Reference: result.SignableTransaction.Reference,
+			Spends: map[uint32]sdkWallet.SignActionSpend{
+				0: {
+					UnlockingScript: unlockingScript.Bytes(),
+				},
+			},
+		},
+		WalletName,
+	)
+	if err != nil {
+		return fmt.Errorf("error occurred while handling the renewal: %w", err)
+	}
+
 	return nil
 }
 
@@ -109,35 +148,24 @@ func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p Crea
 		Wallet: wallet,
 	}
 
-	pubKey, err := wallet.GetPublicKey(ctx, sdkWallet.GetPublicKeyArgs{IdentityKey: true}, "uhrp-server")
+	pubKey, err := wallet.GetPublicKey(ctx, sdkWallet.GetPublicKeyArgs{IdentityKey: true}, WalletName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
-	// Comply with the UHRP Protocol and TS version
 	fields := [][]byte{
-		// The identity Key of the storage host
 		[]byte(pubKey.PublicKey.ToDERHex()),
-		// The hash of the file
 		p.Hash,
-		// The URL of the file
 		[]byte(p.URL),
-		// The expiry time of the advertisement
 		[]byte(fmt.Sprintf("%d", p.ExpirySecs)),
-		// The size of the file
 		[]byte(fmt.Sprintf("%d", p.ContentLength)),
-	}
-
-	protocolID := sdkWallet.Protocol{
-		SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-		Protocol:      "uhrp advertisement",
 	}
 
 	lockScript, err := pd.Lock(
 		ctx,
 		fields,
-		protocolID,
-		"1",
+		Protocol,
+		AnyonesKeyID,
 		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
 		true,
 		true,
@@ -149,4 +177,33 @@ func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p Crea
 	}
 
 	return lockScript, nil
+}
+
+func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interface, result *sdkWallet.CreateActionResult) (*script.Script, error) {
+	pd := &pushdrop.PushDrop{
+		Wallet: wallet,
+	}
+
+	unlocker := pd.Unlock(
+		ctx,
+		Protocol,
+		AnyonesKeyID,
+		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
+		sdkWallet.SignOutputsAll,
+		false,
+	)
+
+	txBeef, txHash, err := transaction.NewBeefFromAtomicBytes(result.SignableTransaction.Tx)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing signable transaction: %w", err)
+	}
+
+	tx := txBeef.FindAtomicTransactionByHash(txHash)
+
+	unlockingScript, err := unlocker.Sign(tx, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error unlocking funding input: %w", err)
+	}
+
+	return unlockingScript, nil
 }
