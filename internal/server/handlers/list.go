@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
@@ -54,12 +53,8 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().Unix()
 	uploads := make([]listUpload, 0)
 	for _, meta := range metadatas {
-		if meta.ExpiryTime > 0 && meta.ExpiryTime < now {
-			continue // expired
-		}
 		uploads = append(uploads, listUpload{
 			UhrpURL:    meta.URL,
 			ExpiryTime: meta.ExpiryTime,
