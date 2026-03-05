@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -71,19 +70,4 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:  "success",
 		Uploads: uploads,
 	})
-}
-
-// parseExpiryTime parses an RFC3339 or unix timestamp string.
-func parseExpiryTime(s string) int64 {
-	if s == "" {
-		return 0
-	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err == nil {
-		return t.Unix()
-	}
-	// Try as raw unix
-	var unix int64
-	fmt.Sscanf(s, "%d", &unix)
-	return unix
 }

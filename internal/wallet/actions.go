@@ -64,18 +64,24 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 }
 
 // RenewAdvertisement consumes an existing advertisement output and creates a new one with the updated script.
-func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matchedOutput sdkWallet.Output, p CreateAdParams) error {
+func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
+	if matchedOutput == nil {
+		return fmt.Errorf("no matched output found")
+	}
+
 	lockingScript, err := buildPushDropScript(ctx, wallet, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
 	_, err = wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
+		InputBEEF:   beef,
 		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.URL),
 		Inputs: []sdkWallet.CreateActionInput{
 			{
-				Outpoint:         matchedOutput.Outpoint,
-				InputDescription: "Redeem previous UHRP advertisement",
+				Outpoint:              matchedOutput.Outpoint,
+				InputDescription:      "Redeem previous UHRP advertisement",
+				UnlockingScriptLength: 74,
 			},
 		},
 		Outputs: []sdkWallet.CreateActionOutput{

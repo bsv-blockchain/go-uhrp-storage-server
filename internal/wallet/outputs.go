@@ -19,7 +19,7 @@ type FileMetadata struct {
 }
 
 // FindAdvertisementByUhrpURL finds a single UHRP advertisement output by its UHRP URL.
-func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string, uploaderIdentityKeyHex string) (*sdkWallet.Output, *FileMetadata, error) {
+func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string, uploaderIdentityKeyHex string) (*sdkWallet.Output, *FileMetadata, []byte, error) {
 	includeCustom := true
 	includeTags := true
 	includeLocking := sdkWallet.OutputIncludeLockingScripts
@@ -36,23 +36,23 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 		Limit: &limit,
 	}, "")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to query wallet outputs: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to query wallet outputs: %w", err)
 	}
 
 	if len(listResult.Outputs) == 0 {
-		return nil, nil, fmt.Errorf("uhrpUrl not found in wallet outputs")
+		return nil, nil, nil, fmt.Errorf("uhrpUrl not found in wallet outputs")
 	}
 
 	output := listResult.Outputs[0]
 
-	response := mapOutputToMetadata(output)
+	metadata := mapOutputToMetadata(output)
 
-	return &output, &response, nil
+	return &output, &metadata, listResult.BEEF, nil
 }
 
 // GetFileSize retrieves the file size for a given UHRP URL.
 func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string) (int64, error) {
-	_, meta, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, "")
+	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, "")
 	if err != nil {
 		return 0, err
 	}

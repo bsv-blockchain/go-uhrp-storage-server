@@ -59,7 +59,7 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, meta, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex())
+	_, meta, _, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex())
 	if err != nil {
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
