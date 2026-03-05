@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,7 +31,7 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 		IncludeCustomInstructions: &includeCustom,
 		IncludeTags:               &includeTags,
 		Tags: []string{
-			fmt.Sprintf("uhrp_url_%s", uhrpURL),
+			fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
 			// fmt.Sprintf("uploader_identity_key_%s", uploaderIdentityKeyHex),
 		},
 		Limit: &limit,
@@ -90,10 +91,20 @@ func mapOutputToMetadata(output sdkWallet.Output) FileMetadata {
 
 	for _, tag := range output.Tags {
 		if strings.HasPrefix(tag, "uhrp_url_") {
-			response.URL = strings.TrimPrefix(tag, "uhrp_url_")
+			hexStr := strings.TrimPrefix(tag, "uhrp_url_")
+			if decoded, err := hex.DecodeString(hexStr); err == nil {
+				response.URL = string(decoded)
+			} else {
+				response.URL = hexStr
+			}
 		}
 		if strings.HasPrefix(tag, "object_identifier_") {
-			response.ObjectIdentifier = strings.TrimPrefix(tag, "object_identifier_")
+			hexStr := strings.TrimPrefix(tag, "object_identifier_")
+			if decoded, err := hex.DecodeString(hexStr); err == nil {
+				response.ObjectIdentifier = string(decoded)
+			} else {
+				response.ObjectIdentifier = hexStr
+			}
 		}
 		if strings.HasPrefix(tag, "expiry_time_") {
 			response.ExpiryTime, _ = strconv.ParseInt(strings.TrimPrefix(tag, "expiry_time_"), 10, 64)

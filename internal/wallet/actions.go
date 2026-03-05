@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 
@@ -44,8 +45,8 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 				OutputDescription: "UHRP advertisement token",
 				Basket:            "uhrp advertisements",
 				Tags: []string{
-					fmt.Sprintf("uhrp_url_%s", uhrpURL),
-					fmt.Sprintf("object_identifier_%s", p.ObjectID),
+					fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
+					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
 					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
 					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
 					"name_file",
