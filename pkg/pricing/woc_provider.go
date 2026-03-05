@@ -24,17 +24,17 @@ type exchangeRateResponse struct {
 }
 
 // GetExchangeRate implements the ExchangeRateProvider interface.
-func (o *WhatsOnChainProvider) GetExchangeRate() float64 {
+func (o *WhatsOnChainProvider) GetExchangeRate() (float64, error) {
 	resp, err := o.httpClient.Get("https://api.whatsonchain.com/v1/bsv/main/exchangerate")
 	if err != nil {
-		return 0.0
+		return 0.0, err
 	}
 	defer resp.Body.Close()
 
 	var data exchangeRateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return 0.0
+		return 0.0, err
 	}
 
-	return data.Rate
+	return data.Rate, nil
 }

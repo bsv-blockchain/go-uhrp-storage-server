@@ -6,8 +6,8 @@ import (
 
 type mockExchangeRateProvider struct{}
 
-func (m mockExchangeRateProvider) GetExchangeRate() float64 {
-	return 30.0
+func (m mockExchangeRateProvider) GetExchangeRate() (float64, error) {
+	return 30.0, nil
 }
 
 func TestGetPrice_MinimumPrice(t *testing.T) {
