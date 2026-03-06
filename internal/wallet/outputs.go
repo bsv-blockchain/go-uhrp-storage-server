@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,30 +11,29 @@ import (
 )
 
 type FileMetadata struct {
-	URL              string `json:"url"`
-	ObjectIdentifier string `json:"objectIdentifier"`
-	Name             string `json:"name"`
-	Size             string `json:"size"`
-	ContentType      string `json:"contentType"`
-	ExpiryTime       int64  `json:"expiryTime"` // minutes since the Unix epoch
+	UploaderIdentityKey string `json:"uploaderIdentityKey"`
+	URL                 string `json:"url"`
+	ObjectIdentifier    string `json:"objectIdentifier"`
+	Name                string `json:"name"`
+	Size                string `json:"size"`
+	ContentType         string `json:"contentType"`
+	ExpiryTime          int64  `json:"expiryTime"` // minutes since the Unix epoch
 }
 
 // FindAdvertisementByUhrpURL finds a single UHRP advertisement output by its UHRP URL.
-func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string, uploaderIdentityKeyHex string) (*sdkWallet.Output, *FileMetadata, []byte, error) {
+func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string) (*sdkWallet.Output, *FileMetadata, []byte, error) {
 	includeCustom := true
 	includeTags := true
 	includeLocking := sdkWallet.OutputIncludeLockingScripts
-	limit := uint32(1)
+
 	listResult, err := wallet.ListOutputs(ctx, sdkWallet.ListOutputsArgs{
 		Basket:                    "uhrp advertisements",
 		Include:                   includeLocking,
 		IncludeCustomInstructions: &includeCustom,
 		IncludeTags:               &includeTags,
 		Tags: []string{
-			fmt.Sprintf("uhrp_url_%s", uhrpURL),
-			// fmt.Sprintf("uploader_identity_key_%s", uploaderIdentityKeyHex),
+			fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
 		},
-		Limit: &limit,
 	}, "")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to query wallet outputs: %w", err)
@@ -43,16 +43,36 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 		return nil, nil, nil, fmt.Errorf("uhrpUrl not found in wallet outputs")
 	}
 
-	output := listResult.Outputs[0]
+	var maxpiryOutput *sdkWallet.Output
+	var maxpiryMetadata *FileMetadata
+	var maxpiry int64 = 0
 
-	metadata := mapOutputToMetadata(output)
+	for _, output := range listResult.Outputs {
+		metadata := mapOutputToMetadata(output)
 
-	return &output, &metadata, listResult.BEEF, nil
+		// This check is more optimal than adding uploader_identity_key tag to the query
+		if metadata.UploaderIdentityKey != uploaderIdentityKeyHex {
+			continue
+		}
+
+		if metadata.ExpiryTime > maxpiry {
+			maxpiry = metadata.ExpiryTime
+			outCopy := output
+			maxpiryOutput = &outCopy
+			maxpiryMetadata = &metadata
+		}
+	}
+
+	if maxpiryOutput == nil {
+		return nil, nil, nil, fmt.Errorf("no valid advertisement found with an expiry time")
+	}
+
+	return maxpiryOutput, maxpiryMetadata, listResult.BEEF, nil
 }
 
 // GetFileSize retrieves the file size for a given UHRP URL.
-func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL string) (int64, error) {
-	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, "")
+func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string) (int64, error) {
+	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, uploaderIdentityKeyHex)
 	if err != nil {
 		return 0, err
 	}
@@ -89,11 +109,25 @@ func mapOutputToMetadata(output sdkWallet.Output) FileMetadata {
 	response := FileMetadata{}
 
 	for _, tag := range output.Tags {
+		if strings.HasPrefix(tag, "uploader_identity_key_") {
+			response.UploaderIdentityKey = strings.TrimPrefix(tag, "uploader_identity_key_")
+		}
+
 		if strings.HasPrefix(tag, "uhrp_url_") {
-			response.URL = strings.TrimPrefix(tag, "uhrp_url_")
+			hexStr := strings.TrimPrefix(tag, "uhrp_url_")
+			if decoded, err := hex.DecodeString(hexStr); err == nil {
+				response.URL = string(decoded)
+			} else {
+				response.URL = hexStr
+			}
 		}
 		if strings.HasPrefix(tag, "object_identifier_") {
-			response.ObjectIdentifier = strings.TrimPrefix(tag, "object_identifier_")
+			hexStr := strings.TrimPrefix(tag, "object_identifier_")
+			if decoded, err := hex.DecodeString(hexStr); err == nil {
+				response.ObjectIdentifier = string(decoded)
+			} else {
+				response.ObjectIdentifier = hexStr
+			}
 		}
 		if strings.HasPrefix(tag, "expiry_time_") {
 			response.ExpiryTime, _ = strconv.ParseInt(strings.TrimPrefix(tag, "expiry_time_"), 10, 64)
