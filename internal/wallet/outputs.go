@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
@@ -86,20 +87,42 @@ func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploa
 func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interface, uploaderIdentityKeyHex string) ([]FileMetadata, error) {
 	includeCustom := true
 	includeTags := true
+	// TODO: add filter by spendable flag to reduce the number of outputs to process
+	limit := uint32(1000)
 	result, err := wallet.ListOutputs(ctx, sdkWallet.ListOutputsArgs{
 		Basket:                    "uhrp advertisements",
 		Tags:                      []string{fmt.Sprintf("uploader_identity_key_%s", uploaderIdentityKeyHex)},
 		IncludeCustomInstructions: &includeCustom,
 		IncludeTags:               &includeTags,
+		Limit:                     &limit,
 	}, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list outputs: %w", err)
 	}
 
-	metadatas := make([]FileMetadata, 0)
+	metadatasMap := make(map[string]FileMetadata)
+
+	now := time.Now().Unix()
 
 	for _, output := range result.Outputs {
-		metadatas = append(metadatas, mapOutputToMetadata(output))
+		meta := mapOutputToMetadata(output)
+
+		if meta.ExpiryTime > 0 && meta.ExpiryTime < now {
+			continue
+		}
+
+		if existing, ok := metadatasMap[meta.URL]; ok {
+			if meta.ExpiryTime > existing.ExpiryTime {
+				metadatasMap[meta.URL] = meta
+			}
+		} else {
+			metadatasMap[meta.URL] = meta
+		}
+	}
+
+	metadatas := make([]FileMetadata, 0, len(metadatasMap))
+	for _, meta := range metadatasMap {
+		metadatas = append(metadatas, meta)
 	}
 
 	return metadatas, nil
