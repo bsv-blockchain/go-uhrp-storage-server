@@ -24,7 +24,7 @@ func main() {
 	fmt.Printf("Starting Go repo test script against: %s\n", serverURL)
 
 	// 1. Setup Auth - create user wallet
-	privateKey, _ := ec.PrivateKeyFromBytes([]byte("xprv9s21ZrQH143K3WYAquX13GWNfPShBx5XT98kBDMQpxz5p1EYJ8fsqwQCkKuJyB7"))
+	privateKey, _ := ec.PrivateKeyFromBytes([]byte("example_xpriv_key"))
 
 	pw, err := sdkWallet.NewCompletedProtoWallet(privateKey)
 	if err != nil {
