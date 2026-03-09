@@ -14,6 +14,7 @@ type Config struct {
 	WalletStorageURL  string
 	PricePerGBMonth   float64
 	MinHostingMinutes int
+	SHIPBroadcast     bool
 }
 
 // Load reads configuration from environment variables.
@@ -26,6 +27,7 @@ func Load() (*Config, error) {
 		WalletStorageURL:  os.Getenv("WALLET_STORAGE_URL"),
 		PricePerGBMonth:   getEnvFloat("PRICE_PER_GB_MO", 0.03),
 		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
+		SHIPBroadcast:     getEnvBool("SHIP_BROADCAST", true),
 	}
 	return cfg, nil
 }
@@ -52,6 +54,16 @@ func getEnvInt(key string, def int) int {
 		i, err := strconv.Atoi(v)
 		if err == nil {
 			return i
+		}
+	}
+	return def
+}
+
+func getEnvBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			return b
 		}
 	}
 	return def

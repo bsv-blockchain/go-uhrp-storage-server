@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"os"
 
+	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/overlay/topic"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/storage"
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -49,7 +51,7 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 		return fmt.Errorf("failed to get URL for hash: %w", err)
 	}
 
-	_, err = wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
+	result, err := wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
 		Description: "UHRP Content Availability Advertisement",
 		Outputs: []sdkWallet.CreateActionOutput{
 			{
@@ -72,11 +74,13 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 		Labels: []string{BaseAdvertisementLabel},
 	}, "")
 	if err != nil {
-		log.Printf("Failed to create UHRP advertisement: %v", err)
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
 
-	// TODO: create SHIPBroadcaster to broadcast the transaction to the network
+	err = overlayBroadcast(result.Tx)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -92,7 +96,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
 
-	result, err := wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
+	aResult, err := wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
 		InputBEEF:   beef,
 		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.URL),
 		Inputs: []sdkWallet.CreateActionInput{
@@ -114,19 +118,18 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		Labels: []string{BaseAdvertisementLabel, RenewalLabel},
 	}, "")
 	if err != nil {
-		log.Printf("Failed to renew UHRP advertisement: %v", err)
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	unlockingScript, inputIndex, err := buildPushDropUnlockingScript(ctx, wallet, matchedOutput, result)
+	unlockingScript, inputIndex, err := buildPushDropUnlockingScript(ctx, wallet, matchedOutput, aResult)
 	if err != nil {
 		return fmt.Errorf("failed to build unlocking script: %w", err)
 	}
 
-	_, err = wallet.SignAction(
+	sResult, err := wallet.SignAction(
 		ctx,
 		sdkWallet.SignActionArgs{
-			Reference: result.SignableTransaction.Reference,
+			Reference: aResult.SignableTransaction.Reference,
 			Spends: map[uint32]sdkWallet.SignActionSpend{
 				inputIndex: {
 					UnlockingScript: unlockingScript.Bytes(),
@@ -137,6 +140,11 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 	)
 	if err != nil {
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
+	}
+
+	err = overlayBroadcast(sResult.Tx)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -233,4 +241,34 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 	}
 
 	return unlockingScript, uint32(inputIndex), nil
+}
+
+func overlayBroadcast(tx []byte) error {
+	if os.Getenv("SHIP_BROADCAST") == "false" {
+		return nil
+	}
+
+	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
+		NetworkPreset: overlay.NetworkMainnet,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create topic broadcaster: %w", err)
+	}
+
+	newBeef, newTxHash, err := transaction.NewBeefFromAtomicBytes(tx)
+	if err != nil {
+		return fmt.Errorf("error parsing signed transaction bytes into BEEF: %w", err)
+	}
+
+	newTx := newBeef.FindAtomicTransactionByHash(newTxHash)
+	fmt.Println("Parsed signed transaction from BEEF", "version", newTx.Version, "inputs", len(newTx.Inputs), "outputs", len(newTx.Outputs))
+
+	success, failure := broadcaster.Broadcast(newTx)
+	if failure != nil {
+		return fmt.Errorf("error occurred while handling the broadcasting: %w", failure)
+	}
+
+	fmt.Println("Success: ", success)
+	fmt.Println("Failure: ", failure)
+	return nil
 }
