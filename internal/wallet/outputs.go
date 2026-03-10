@@ -22,18 +22,26 @@ type FileMetadata struct {
 }
 
 // FindAdvertisementByUhrpURL finds a single UHRP advertisement output by its UHRP URL.
-func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string) (*sdkWallet.Output, *FileMetadata, []byte, error) {
+func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string, limit, offset uint32) (*sdkWallet.Output, *FileMetadata, []byte, error) {
 	includeCustom := true
 	includeTags := true
 	includeLocking := sdkWallet.OutputIncludeLockingScripts
+
+	if limit == 0 {
+		limit = 200
+	}
 
 	listResult, err := wallet.ListOutputs(ctx, sdkWallet.ListOutputsArgs{
 		Basket:                    "uhrp advertisements",
 		Include:                   includeLocking,
 		IncludeCustomInstructions: &includeCustom,
 		IncludeTags:               &includeTags,
+		Limit:                     &limit,
+		Offset:                    &offset,
+		TagQueryMode:              sdkWallet.QueryModeAll,
 		Tags: []string{
 			fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
+			fmt.Sprintf("uploader_identity_key_%s", uploaderIdentityKeyHex),
 		},
 	}, "")
 	if err != nil {
@@ -44,36 +52,23 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 		return nil, nil, nil, fmt.Errorf("uhrpUrl not found in wallet outputs")
 	}
 
-	var maxpiryOutput *sdkWallet.Output
-	var maxpiryMetadata *FileMetadata
-	var maxpiry int64 = 0
-
-	for _, output := range listResult.Outputs {
-		metadata := mapOutputToMetadata(output)
-
-		// This check is more optimal than adding uploader_identity_key tag to the query
-		if metadata.UploaderIdentityKey != uploaderIdentityKeyHex {
-			continue
-		}
-
-		if metadata.ExpiryTime > maxpiry {
-			maxpiry = metadata.ExpiryTime
-			outCopy := output
-			maxpiryOutput = &outCopy
-			maxpiryMetadata = &metadata
-		}
+	if len(listResult.Outputs) > 1 {
+		return nil, nil, nil, fmt.Errorf("multiple advertisements found for uhrpUrl")
 	}
 
-	if maxpiryOutput == nil {
-		return nil, nil, nil, fmt.Errorf("no valid advertisement found with an expiry time")
+	output := listResult.Outputs[0]
+	metadata := mapOutputToMetadata(output)
+
+	if metadata.ExpiryTime > 0 && metadata.ExpiryTime < time.Now().Unix() {
+		return nil, nil, nil, fmt.Errorf("advertisement for uhrpUrl is expired")
 	}
 
-	return maxpiryOutput, maxpiryMetadata, listResult.BEEF, nil
+	return &output, &metadata, listResult.BEEF, nil
 }
 
 // GetFileSize retrieves the file size for a given UHRP URL.
 func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string) (int64, error) {
-	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, uploaderIdentityKeyHex)
+	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, uploaderIdentityKeyHex, 200, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -84,17 +79,19 @@ func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploa
 }
 
 // ListAdvertisementsByUploader lists all advertisements for a specific uploader.
-func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interface, uploaderIdentityKeyHex string) ([]FileMetadata, error) {
+func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interface, uploaderIdentityKeyHex string, limit, offset uint32) ([]FileMetadata, error) {
 	includeCustom := true
 	includeTags := true
-	// TODO: add filter by spendable flag to reduce the number of outputs to process
-	limit := uint32(1000)
+	if limit == 0 {
+		limit = 200
+	}
 	result, err := wallet.ListOutputs(ctx, sdkWallet.ListOutputsArgs{
 		Basket:                    "uhrp advertisements",
 		Tags:                      []string{fmt.Sprintf("uploader_identity_key_%s", uploaderIdentityKeyHex)},
 		IncludeCustomInstructions: &includeCustom,
 		IncludeTags:               &includeTags,
 		Limit:                     &limit,
+		Offset:                    &offset,
 	}, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list outputs: %w", err)
