@@ -70,18 +70,16 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Find the existing advertisement via FindAdvertisementByUhrpURL
-	output, meta, beef, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex())
+	output, meta, beef, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex(), 200, 0)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No advertisement found for the given uhrpUrl.")
 		} else {
-			responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL_RENEW", "Failed to query wallet outputs.")
+			responses.WriteError(w, http.StatusInternalServerError, "ERR_FIND", "Failed to retrieve the existing advertisement.")
 		}
 		return
 	}
 
-	// 2. Calculate pricing
 	prevExpiry := meta.ExpiryTime
 	var fileSize int64
 	fmt.Sscanf(meta.Size, "%d", &fileSize)
@@ -92,10 +90,8 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Compute new expiry
 	newExpiry := prevExpiry + (req.AdditionalMinutes * 60)
 
-	// 4. Renew the advertisement via walletpkg
 	p := walletpkg.CreateAdParams{
 		URL:           req.UhrpURL,
 		ExpirySecs:    newExpiry,
@@ -106,7 +102,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, output, beef, p); err != nil {
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL_RENEW", "An error occurred while handling the renewal.")
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_RENEW", "Failed to renew advertisement on chain.")
 		return
 	}
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
@@ -11,6 +12,11 @@ import (
 // ListHandler handles GET /list requests.
 type ListHandler struct {
 	WalletProvider *walletpkg.Provider
+}
+
+type listReqBody struct {
+	Limit  *uint32 `json:"limit"`
+	Offset *uint32 `json:"offset"`
 }
 
 type listUpload struct {
@@ -47,7 +53,20 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadatas, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex())
+	var limit, offset uint32
+	if r.Body != nil {
+		var req listReqBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Limit != nil {
+				limit = *req.Limit
+			}
+			if req.Offset != nil {
+				offset = *req.Offset
+			}
+		}
+	}
+
+	metadatas, err := walletpkg.ListAdvertisementsByUploader(r.Context(), wallet, identityKey.ToDERHex(), limit, offset)
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
 		return

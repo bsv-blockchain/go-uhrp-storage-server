@@ -118,7 +118,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	unlockingScript, err := buildPushDropUnlockingScript(ctx, wallet, result)
+	unlockingScript, inputIndex, err := buildPushDropUnlockingScript(ctx, wallet, matchedOutput, result)
 	if err != nil {
 		return fmt.Errorf("failed to build unlocking script: %w", err)
 	}
@@ -128,7 +128,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		sdkWallet.SignActionArgs{
 			Reference: result.SignableTransaction.Reference,
 			Spends: map[uint32]sdkWallet.SignActionSpend{
-				0: {
+				inputIndex: {
 					UnlockingScript: unlockingScript.Bytes(),
 				},
 			},
@@ -179,9 +179,16 @@ func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p Crea
 	return lockScript, nil
 }
 
-func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interface, result *sdkWallet.CreateActionResult) (*script.Script, error) {
+func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, result *sdkWallet.CreateActionResult) (*script.Script, uint32, error) {
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
+	}
+
+	lockingScript := script.NewFromBytes(matchedOutput.LockingScript)
+
+	opts := pushdrop.UnlockOptions{
+		SourceSatoshis: &matchedOutput.Satoshis,
+		LockingScript:  lockingScript,
 	}
 
 	unlocker := pd.Unlock(
@@ -191,19 +198,39 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
 		sdkWallet.SignOutputsAll,
 		false,
+		opts,
 	)
 
 	txBeef, txHash, err := transaction.NewBeefFromAtomicBytes(result.SignableTransaction.Tx)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing signable transaction: %w", err)
+		return nil, 0, fmt.Errorf("error parsing signable transaction: %w", err)
 	}
 
-	tx := txBeef.FindAtomicTransactionByHash(txHash)
+	tx := txBeef.FindTransactionForSigningByHash(txHash)
 
-	unlockingScript, err := unlocker.Sign(tx, 0)
+	inputIndex := -1
+	for i, input := range tx.Inputs {
+		outpointStr := fmt.Sprintf("%s.%d", input.SourceTXID.String(), input.SourceTxOutIndex)
+		if outpointStr == matchedOutput.Outpoint.String() {
+			inputIndex = i
+			break
+		}
+	}
+
+	if inputIndex == -1 {
+		return nil, 0, fmt.Errorf("could not find input matching outpoint %s in signable transaction", matchedOutput.Outpoint.String())
+	}
+
+	tx.Inputs[inputIndex].SetSourceTxOutput(&transaction.TransactionOutput{
+		Satoshis:      matchedOutput.Satoshis,
+		LockingScript: script.NewFromBytes(matchedOutput.LockingScript),
+	})
+	tx.Inputs[inputIndex].SourceTransaction = nil
+
+	unlockingScript, err := unlocker.Sign(tx, inputIndex)
 	if err != nil {
-		return nil, fmt.Errorf("error unlocking funding input: %w", err)
+		return nil, 0, fmt.Errorf("error unlocking funding input: %w", err)
 	}
 
-	return unlockingScript, nil
+	return unlockingScript, uint32(inputIndex), nil
 }

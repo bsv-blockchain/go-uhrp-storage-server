@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
@@ -12,6 +12,11 @@ import (
 // FindHandler handles GET /find requests.
 type FindHandler struct {
 	WalletProvider *walletpkg.Provider
+}
+
+type findReqBody struct {
+	Limit  *uint32 `json:"limit"`
+	Offset *uint32 `json:"offset"`
 }
 
 type findData struct {
@@ -53,21 +58,27 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var limit, offset uint32
+	if r.Body != nil {
+		var req findReqBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.Limit != nil {
+				limit = *req.Limit
+			}
+			if req.Offset != nil {
+				offset = *req.Offset
+			}
+		}
+	}
+
 	wallet := h.WalletProvider.GetWallet()
 	if wallet == nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
 		return
 	}
 
-	_, meta, _, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex())
+	_, meta, _, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex(), limit, offset)
 	if err != nil {
-		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
-		return
-	}
-
-	now := time.Now().Unix()
-	expiryTime := meta.ExpiryTime
-	if expiryTime > 0 && expiryTime < now {
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return
 	}
@@ -78,7 +89,7 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Name:       meta.ObjectIdentifier,
 			Size:       meta.Size,
 			MimeType:   meta.ContentType,
-			ExpiryTime: expiryTime,
+			ExpiryTime: meta.ExpiryTime,
 		},
 	})
 }
