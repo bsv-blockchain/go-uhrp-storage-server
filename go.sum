@@ -83,8 +83,8 @@ github.com/bsv-blockchain/go-p2p-message-bus v0.1.9 h1:VSrDBegKXC7YR6Pt9/ZF8UKq6
 github.com/bsv-blockchain/go-p2p-message-bus v0.1.9/go.mod h1:vqJHNmY1m/yMtrBYtaRkc/t1JfvH7RydcE3TNVwaCJo=
 github.com/bsv-blockchain/go-safe-conversion v1.1.2 h1:otAM71jUp+rBvEaNjfLTxlBKNnMbdbvDoew7brwPg0k=
 github.com/bsv-blockchain/go-safe-conversion v1.1.2/go.mod h1:KwO5HkH9S11kppAm7SedJhgaJnZbUMYRZalSq9fxLHQ=
-github.com/bsv-blockchain/go-sdk v1.2.19-0.20260312142212-1e06945a026d h1:DezxWa/+i6mH2/3TkhbvrZM6L5vkGwUzsN+PbYvoxRM=
-github.com/bsv-blockchain/go-sdk v1.2.19-0.20260312142212-1e06945a026d/go.mod h1:QWYwia7QSPB8+sLWyVldsIg0wPPzvEmXL5wGAT0dgaA=
+github.com/bsv-blockchain/go-sdk v1.2.19 h1:KInzoyKp/dh21YiMpPDpKmHu5z37yaQXF02OMZWdsXU=
+github.com/bsv-blockchain/go-sdk v1.2.19/go.mod h1:5mmw1QLusuAkjWmQgUOurQYCXdIsQEsWXbAZ9zwme3g=
 github.com/bsv-blockchain/go-subtree v1.1.8 h1:t4C+5DdXOGk5MT7N3uPeuN8WBWoRimVzGClbLErQkQA=
 github.com/bsv-blockchain/go-subtree v1.1.8/go.mod h1:gTejT7isA9q6indGDMXa+lwrvikVWtz4subw+VM9Ecc=
 github.com/bsv-blockchain/go-teranode-p2p-client v0.1.1 h1:7Mga5zy8cY+lV8r64Ez6TlRQVG9z30L2YiuyTnUYBks=
@@ -803,8 +803,8 @@ golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJ
 golang.org/x/sync v0.0.0-20210220032951-036812b2e83c/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.19.0 h1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=
-golang.org/x/sync v0.19.0/go.mod h1:9KTHXmSnoGruLpwFjVSX0lNNA75CykiMECbovNTZqGI=
+golang.org/x/sync v0.20.0 h1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=
+golang.org/x/sync v0.20.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
 golang.org/x/sys v0.0.0-20180830151530-49385e6e1522/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
