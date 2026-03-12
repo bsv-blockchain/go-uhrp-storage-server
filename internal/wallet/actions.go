@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"os"
 
 	"github.com/bsv-blockchain/go-sdk/overlay"
 	"github.com/bsv-blockchain/go-sdk/overlay/topic"
@@ -12,6 +11,7 @@ import (
 	"github.com/bsv-blockchain/go-sdk/storage"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/bsv-blockchain/go-sdk/transaction/template/pushdrop"
+	"github.com/bsv-blockchain/go-sdk/util"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
 
@@ -72,6 +72,9 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 			},
 		},
 		Labels: []string{BaseAdvertisementLabel},
+		Options: &sdkWallet.CreateActionOptions{
+			RandomizeOutputs: util.BoolPtr(false),
+		},
 	}, "")
 	if err != nil {
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
@@ -116,6 +119,9 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 			},
 		},
 		Labels: []string{BaseAdvertisementLabel, RenewalLabel},
+		Options: &sdkWallet.CreateActionOptions{
+			RandomizeOutputs: util.BoolPtr(false),
+		},
 	}, "")
 	if err != nil {
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
@@ -162,11 +168,11 @@ func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p Crea
 	}
 
 	fields := [][]byte{
-		[]byte(pubKey.PublicKey.ToDERHex()),
+		pubKey.PublicKey.Compressed(),
 		p.Hash,
 		[]byte(p.URL),
-		[]byte(fmt.Sprintf("%d", p.ExpirySecs)),
-		[]byte(fmt.Sprintf("%d", p.ContentLength)),
+		util.VarInt(uint64(p.ExpirySecs)).Bytes(),
+		util.VarInt(uint64(p.ContentLength)).Bytes(),
 	}
 
 	lockScript, err := pd.Lock(
@@ -244,10 +250,6 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 }
 
 func overlayBroadcast(tx []byte) error {
-	if os.Getenv("SHIP_BROADCAST") == "false" {
-		return nil
-	}
-
 	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
 		NetworkPreset: overlay.NetworkMainnet,
 	})
@@ -269,6 +271,6 @@ func overlayBroadcast(tx []byte) error {
 	}
 
 	fmt.Println("Success: ", success)
-	fmt.Println("Failure: ", failure)
+
 	return nil
 }
