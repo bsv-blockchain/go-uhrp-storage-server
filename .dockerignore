@@ -1,0 +1,6 @@
+.git
+.env
+.DS_Store
+server
+*.exe
+integration_test.go

@@ -3,8 +3,8 @@ module github.com/bsv-blockchain/go-uhrp-storage-server
 go 1.25.4
 
 require (
-	github.com/bsv-blockchain/go-bsv-middleware v0.12.4
-	github.com/bsv-blockchain/go-sdk v1.2.18
+	github.com/bsv-blockchain/go-bsv-middleware v0.12.5
+	github.com/bsv-blockchain/go-sdk v1.2.19
 	github.com/bsv-blockchain/go-wallet-toolbox v0.172.1
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/joho/godotenv v1.6.0-pre.2
@@ -263,7 +263,7 @@ require (
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260209163413-e7419c687ee4 // indirect
 	golang.org/x/term v0.40.0 // indirect

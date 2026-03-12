@@ -1,0 +1,58 @@
+name: Build and Push to GHCR
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  get_tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine deployment tag
+        id: deployment_tag
+        run: |
+          if [[ '${{ github.ref_type }}' == 'tag' ]]; then
+            export tag=${{ github.ref_name }}
+            echo "version tag is $tag"
+            echo "id=$tag" >> $GITHUB_OUTPUT
+          else
+            export tag=latest
+            echo "version tag is $tag"
+            echo "id=$tag" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      deployment_tag: ${{ steps.deployment_tag.outputs.id }}
+
+  build-and-push:
+    needs: [get_tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/bsv-blockchain/go-uhrp-storage-server:${{ github.sha }}
+            ghcr.io/bsv-blockchain/go-uhrp-storage-server:${{ needs.get_tag.outputs.deployment_tag }}
