@@ -95,8 +95,8 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Create UHRP advertisement
 	if strings.HasPrefix(h.HostingDomain, "localhost") {
 		log.Println("Not advertising, localhost")
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL",
-			"An internal error occurred while processing the request.")
+		log.Printf("File uploaded: objectID=%s, size=%d, uploader=%s", objectID, len(body), uploader)
+		responses.WriteJSON(w, http.StatusOK, map[string]string{"status": "success"})
 		return
 	}
 

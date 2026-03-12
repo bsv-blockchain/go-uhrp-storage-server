@@ -3,7 +3,7 @@ module github.com/bsv-blockchain/go-uhrp-storage-server
 go 1.25.4
 
 require (
-	github.com/bsv-blockchain/go-bsv-middleware v0.12.4
+	github.com/bsv-blockchain/go-bsv-middleware v0.12.5
 	github.com/bsv-blockchain/go-sdk v1.2.19-0.20260312142212-1e06945a026d
 	github.com/bsv-blockchain/go-wallet-toolbox v0.172.1
 	github.com/go-chi/chi/v5 v5.2.1
