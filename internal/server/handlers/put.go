@@ -95,8 +95,7 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Create UHRP advertisement
 	if strings.HasPrefix(h.HostingDomain, "localhost") {
 		log.Println("Not advertising, localhost")
-		log.Printf("File uploaded: objectID=%s, size=%d, uploader=%s", objectID, len(body), uploader)
-		responses.WriteJSON(w, http.StatusOK, map[string]string{"status": "success"})
+		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "No advertising in localhost.")
 		return
 	}
 
@@ -117,7 +116,7 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = walletpkg.CreateAdvertisement(r.Context(), wallet, walletpkg.CreateAdParams{
+	err = walletpkg.CreateAdvertisement(r.Context(), wallet, h.WalletProvider.OverlayNetwork(), walletpkg.CreateAdParams{
 		Hash:          hash,
 		URL:           fmt.Sprintf("https://%s/cdn/%s", h.HostingDomain, objectID),
 		ExpirySecs:    expiryInt,
