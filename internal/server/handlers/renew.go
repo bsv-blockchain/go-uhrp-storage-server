@@ -101,7 +101,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Uploader:      identityKey.ToDERHex(),
 	}
 
-	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, output, beef, p); err != nil {
+	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, h.WalletProvider.OverlayNetwork(), output, beef, p); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_RENEW", "Failed to renew advertisement on chain.")
 		return
 	}

@@ -40,7 +40,7 @@ type CreateAdParams struct {
 }
 
 // CreateAdvertisement constructs the PushDrop script and executes a CreateAction wallet call to mint an advertisement.
-func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p CreateAdParams) error {
+func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network overlay.Network, p CreateAdParams) error {
 	lockingScript, err := buildPushDropScript(ctx, wallet, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
@@ -64,7 +64,6 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
 					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
 					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
-					// TODO: maybe actual name should be added as a tag
 					"name_file",
 					fmt.Sprintf("content_type_%s", p.ContentType),
 					fmt.Sprintf("size_%d", p.ContentLength),
@@ -80,7 +79,7 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
 
-	err = overlayBroadcast(result.Tx)
+	err = overlayBroadcast(result.Tx, network)
 	if err != nil {
 		return err
 	}
@@ -89,12 +88,12 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, p Crea
 }
 
 // RenewAdvertisement consumes an existing advertisement output and creates a new one with the updated script.
-func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
+func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network overlay.Network, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
 	if matchedOutput == nil {
 		return fmt.Errorf("no matched output found")
 	}
 
-	lockingScript, err := buildPushDropScript(ctx, wallet, p)
+	lockingScript, err := decodeAndBuildPushDropLockingScript(ctx, wallet, matchedOutput, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
@@ -113,9 +112,17 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 			{
 				LockingScript:     lockingScript.Bytes(),
 				Satoshis:          1,
-				OutputDescription: "Renewed UHRP advertisement token",
+				OutputDescription: "UHRP advertisement token (renewed)",
 				Basket:            BasketName,
-				Tags:              matchedOutput.Tags,
+				Tags: []string{
+					fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(p.URL))),
+					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
+					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
+					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
+					"name_file",
+					fmt.Sprintf("content_type_%s", p.ContentType),
+					fmt.Sprintf("size_%d", p.ContentLength),
+				},
 			},
 		},
 		Labels: []string{BaseAdvertisementLabel, RenewalLabel},
@@ -148,7 +155,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, matched
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	err = overlayBroadcast(sResult.Tx)
+	err = overlayBroadcast(sResult.Tx, network)
 	if err != nil {
 		return err
 	}
@@ -239,7 +246,6 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 		Satoshis:      matchedOutput.Satoshis,
 		LockingScript: script.NewFromBytes(matchedOutput.LockingScript),
 	})
-	tx.Inputs[inputIndex].SourceTransaction = nil
 
 	unlockingScript, err := unlocker.Sign(tx, inputIndex)
 	if err != nil {
@@ -249,9 +255,43 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 	return unlockingScript, uint32(inputIndex), nil
 }
 
-func overlayBroadcast(tx []byte) error {
+func decodeAndBuildPushDropLockingScript(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, p CreateAdParams) (*script.Script, error) {
+	pd := &pushdrop.PushDrop{
+		Wallet: wallet,
+	}
+
+	prevLockingScript := pushdrop.Decode((*script.Script)(&matchedOutput.LockingScript))
+
+	fields := [][]byte{
+		prevLockingScript.Fields[0],
+		prevLockingScript.Fields[1],
+		prevLockingScript.Fields[2],
+		util.VarInt(uint64(p.ExpirySecs)).Bytes(),
+		prevLockingScript.Fields[4],
+	}
+
+	lockScript, err := pd.Lock(
+		ctx,
+		fields,
+		Protocol,
+		AnyonesKeyID,
+		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
+		true,
+		true,
+		pushdrop.LockBefore,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lockScript, nil
+
+}
+
+func overlayBroadcast(tx []byte, network overlay.Network) error {
 	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
-		NetworkPreset: overlay.NetworkMainnet,
+		NetworkPreset: network,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create topic broadcaster: %w", err)

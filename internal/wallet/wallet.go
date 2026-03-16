@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/bsv-blockchain/go-sdk/overlay"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 	toolbox "github.com/bsv-blockchain/go-wallet-toolbox/pkg/wallet"
@@ -93,7 +94,18 @@ func (p *Provider) ServerPrivateKey() string {
 	return p.serverPrivateKey
 }
 
-// BSVNetwork returns the configured network.
-func (p *Provider) BSVNetwork() string {
-	return p.bsvNetwork
+// ToolboxNetwork returns the configured network for wallet-toolbox SDK
+func (p *Provider) ToolboxNetwork() defs.BSVNetwork {
+	if p.bsvNetwork == "testnet" {
+		return defs.NetworkTestnet
+	}
+	return defs.NetworkMainnet
+}
+
+// OverlayNetwork returns the configured network for overlay SDK
+func (p *Provider) OverlayNetwork() overlay.Network {
+	if p.bsvNetwork == "testnet" {
+		return overlay.NetworkTestnet
+	}
+	return overlay.NetworkMainnet
 }
