@@ -270,12 +270,6 @@ func decodeAndBuildPushDropLockingScript(ctx context.Context, wallet sdkWallet.I
 		prevLockingScript.Fields[4],
 	}
 
-	fmt.Println("FIELDS:  ")
-	for i, field := range fields {
-		fmt.Println(i, field)
-		fmt.Println(i, hex.EncodeToString(field))
-	}
-
 	lockScript, err := pd.Lock(
 		ctx,
 		fields,
