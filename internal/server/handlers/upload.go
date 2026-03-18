@@ -25,12 +25,12 @@ type UploadHandler struct {
 	Logger            *slog.Logger
 }
 
-type uploadRequest struct {
+type UploadRequest struct {
 	FileSize        int64 `json:"fileSize"`
 	RetentionPeriod int64 `json:"retentionPeriod"`
 }
 
-type uploadResponse struct {
+type UploadResponse struct {
 	Status          string            `json:"status"`
 	UploadURL       string            `json:"uploadURL,omitempty"`
 	RequiredHeaders map[string]string `json:"requiredHeaders,omitempty"`
@@ -57,7 +57,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req uploadRequest
+	var req UploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_BODY", "Invalid request body.")
 		return
@@ -107,7 +107,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	uploadURL := fmt.Sprintf("%s%s/put?%s&hmac=%s", scheme, h.HostingDomain, queryStr, hmac)
 
-	responses.WriteJSON(w, http.StatusOK, uploadResponse{
+	responses.WriteJSON(w, http.StatusOK, UploadResponse{
 		Status:          "success",
 		UploadURL:       uploadURL,
 		RequiredHeaders: map[string]string{},

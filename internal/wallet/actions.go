@@ -250,6 +250,9 @@ func (wp *Provider) buildPushDropUnlockingScript(ctx context.Context, matchedOut
 	}
 
 	tx := txBeef.FindTransactionForSigningByHash(txHash)
+	if tx == nil {
+		return nil, 0, fmt.Errorf("transaction not found in BEEF")
+	}
 
 	inputIndex := -1
 	for i, input := range tx.Inputs {
@@ -284,6 +287,9 @@ func (wp *Provider) decodeAndBuildPushDropLockingScript(ctx context.Context, mat
 	}
 
 	prevLockingScript := pushdrop.Decode((*script.Script)(&matchedOutput.LockingScript))
+	if prevLockingScript == nil || len(prevLockingScript.Fields) < 5 {
+		return nil, fmt.Errorf("invalid or missing pushdrop locking script")
+	}
 
 	fields := [][]byte{
 		prevLockingScript.Fields[0],
