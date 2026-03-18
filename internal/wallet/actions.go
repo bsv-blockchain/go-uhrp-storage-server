@@ -221,6 +221,9 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 	}
 
 	tx := txBeef.FindTransactionForSigningByHash(txHash)
+	if tx == nil {
+		return nil, 0, fmt.Errorf("transaction not found in BEEF")
+	}
 
 	inputIndex := -1
 	for i, input := range tx.Inputs {

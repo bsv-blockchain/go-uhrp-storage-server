@@ -18,14 +18,14 @@ type RenewHandler struct {
 	WalletProvider *walletpkg.Provider
 }
 
-type renewRequest struct {
+type RenewRequest struct {
 	UhrpURL           string `json:"uhrpUrl"`
 	AdditionalMinutes int64  `json:"additionalMinutes"`
 	Limit             *int   `json:"limit,omitempty"`
 	Offset            *int   `json:"offset,omitempty"`
 }
 
-type renewResponse struct {
+type RenewResponse struct {
 	Status         string `json:"status"`
 	PrevExpiryTime int64  `json:"prevExpiryTime,omitempty"`
 	NewExpiryTime  int64  `json:"newExpiryTime,omitempty"`
@@ -53,7 +53,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req renewRequest
+	var req RenewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		responses.WriteError(w, http.StatusBadRequest, "ERR_MISSING_FIELDS", "Invalid request body.")
 		return
@@ -106,7 +106,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responses.WriteJSON(w, http.StatusOK, renewResponse{
+	responses.WriteJSON(w, http.StatusOK, RenewResponse{
 		Status:         "success",
 		PrevExpiryTime: prevExpiry,
 		NewExpiryTime:  newExpiry,

@@ -26,7 +26,7 @@ type findData struct {
 	ExpiryTime int64  `json:"expiryTime"`
 }
 
-type findResponse struct {
+type FindResponse struct {
 	Status      string    `json:"status"`
 	Data        *findData `json:"data,omitempty"`
 	Code        string    `json:"code,omitempty"`
@@ -39,7 +39,7 @@ type findResponse struct {
 // @Accept json
 // @Produce json
 // @Param uhrpUrl query string true "UHRP URL of the file to find"
-// @Success 200 {object} findResponse
+// @Success 200 {object} FindResponse
 // @Failure 400 {object} responses.ErrorResponse
 // @Failure 401 {object} responses.ErrorResponse
 // @Failure 404 {object} responses.ErrorResponse
@@ -83,7 +83,7 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responses.WriteJSON(w, http.StatusOK, findResponse{
+	responses.WriteJSON(w, http.StatusOK, FindResponse{
 		Status: "success",
 		Data: &findData{
 			Name:       meta.ObjectIdentifier,

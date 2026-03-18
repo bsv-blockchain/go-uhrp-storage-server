@@ -24,7 +24,7 @@ type listUpload struct {
 	ExpiryTime int64  `json:"expiryTime"`
 }
 
-type listResponse struct {
+type ListResponse struct {
 	Status  string       `json:"status"`
 	Uploads []listUpload `json:"uploads"`
 	Code    string       `json:"code,omitempty"`
@@ -36,7 +36,7 @@ type listResponse struct {
 // @Description Retrieve a list of all currently active (non-expired) UHRP advertisements created by the authenticated user.
 // @Accept json
 // @Produce json
-// @Success 200 {object} listResponse
+// @Success 200 {object} ListResponse
 // @Failure 401 {object} responses.ErrorResponse
 // @Failure 500 {object} responses.ErrorResponse
 // @Router /list [get]
@@ -80,7 +80,7 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	responses.WriteJSON(w, http.StatusOK, listResponse{
+	responses.WriteJSON(w, http.StatusOK, ListResponse{
 		Status:  "success",
 		Uploads: uploads,
 	})

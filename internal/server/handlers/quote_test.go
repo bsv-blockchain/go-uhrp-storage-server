@@ -1,11 +1,13 @@
-package handlers
+package handlers_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
+	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
@@ -15,62 +17,62 @@ func (m mockOracle) GetExchangeRate() (float64, error) {
 	return 30.0, nil
 }
 
-func TestQuoteHandler_MissingFileSize(t *testing.T) {
-	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
-		MinHostingMinutes: 0,
+func TestQuoteHandler_ServeHTTP(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           interface{}
+		expectedStatus int
+	}{
+		{
+			name:           "Valid Request",
+			body:           map[string]interface{}{"fileSize": 1024, "retentionPeriod": 60},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Missing File Size",
+			body:           map[string]interface{}{"retentionPeriod": 60},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Missing Retention Period",
+			body:           map[string]interface{}{"fileSize": 1024},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Retention Period Too Large",
+			body:           map[string]interface{}{"fileSize": 1024, "retentionPeriod": 70000000},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Invalid JSON",
+			body:           "invalid json",
+			expectedStatus: http.StatusBadRequest,
+		},
 	}
-	body := `{"retentionPeriod": 60}`
-	req := httptest.NewRequest("POST", "/quote", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-}
 
-func TestQuoteHandler_MissingRetention(t *testing.T) {
-	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
-		MinHostingMinutes: 0,
-	}
-	body := `{"fileSize": 1024}`
-	req := httptest.NewRequest("POST", "/quote", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &handlers.QuoteHandler{
+				Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
+				MinHostingMinutes: 0,
+			}
 
-func TestQuoteHandler_RetentionTooLarge(t *testing.T) {
-	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
-		MinHostingMinutes: 0,
-	}
-	body := `{"fileSize": 1024, "retentionPeriod": 70000000}`
-	req := httptest.NewRequest("POST", "/quote", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-}
+			var bodyReader *bytes.Reader
+			if s, ok := tt.body.(string); ok {
+				bodyReader = bytes.NewReader([]byte(s))
+			} else {
+				bodyBytes, _ := json.Marshal(tt.body)
+				bodyReader = bytes.NewReader(bodyBytes)
+			}
 
-func TestQuoteHandler_ValidRequest(t *testing.T) {
-	h := &QuoteHandler{
-		Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
-		MinHostingMinutes: 0,
-	}
-	body := `{"fileSize": 1024, "retentionPeriod": 60}`
-	req := httptest.NewRequest("POST", "/quote", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+			req := httptest.NewRequest("POST", "/quote", bodyReader)
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d. Body: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+		})
 	}
 }

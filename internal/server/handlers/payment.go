@@ -28,7 +28,7 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 		if strings.Contains(req.URL.Path, "/upload") {
-			var payload uploadRequest
+			var payload UploadRequest
 			if err := json.Unmarshal(bodyBytes, &payload); err == nil {
 				price, err := calc.GetPrice(payload.FileSize, payload.RetentionPeriod)
 				if err != nil {
@@ -42,7 +42,7 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 				return 0, fmt.Errorf("identityKey not found in context")
 			}
 
-			var payload renewRequest
+			var payload RenewRequest
 			if err := json.Unmarshal(bodyBytes, &payload); err == nil {
 				wallet := wp.GetWallet()
 				if wallet == nil {
