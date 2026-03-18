@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -25,10 +25,12 @@ import (
 // Server represents the UHRP storage HTTP server
 type Server struct {
 	HTTPServer *http.Server
+	Logger     *slog.Logger
 }
 
 // New creates and configures a new Server instance
-func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore, wp *wallet.Provider, publicDir string) *Server {
+func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore, wp *wallet.Provider, publicDir string, logger *slog.Logger) *Server {
+	logger = logger.With("component", "server")
 	mimeMiddleware := &middlewares.MimeTypeMiddleware{CDNPath: store.CDNPath()}
 
 	r := chi.NewRouter()
@@ -48,10 +50,10 @@ func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore,
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	// Pre-auth routes (no auth/payment required)
-	registerPreAuthRoutes(cfg, r, store, wp, calc)
+	registerPreAuthRoutes(cfg, r, store, wp, calc, logger)
 
 	// Post-auth routes (require auth + payment middleware)
-	registerPostAuthRoutes(wp, calc, r, cfg)
+	registerPostAuthRoutes(wp, calc, r, cfg, logger)
 
 	// 404 handler
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -66,16 +68,19 @@ func New(cfg *config.Config, calc *pricing.Calculator, store *storage.FileStore,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 
-	return &Server{HTTPServer: srv}
+	return &Server{
+		HTTPServer: srv,
+		Logger:     logger,
+	}
 }
 
 // Start begins listening and serving HTTP traffic
 func (s *Server) Start() error {
-	log.Printf("UHRP Storage Server listening on %s", s.HTTPServer.Addr)
+	s.Logger.Info("UHRP Storage Server listening", "addr", s.HTTPServer.Addr)
 	return s.HTTPServer.ListenAndServe()
 }
 
-func registerPostAuthRoutes(wp *wallet.Provider, calc *pricing.Calculator, r *chi.Mux, cfg *config.Config) {
+func registerPostAuthRoutes(wp *wallet.Provider, calc *pricing.Calculator, r *chi.Mux, cfg *config.Config, logger *slog.Logger) {
 	if wp.GetWallet() == nil {
 		return
 	}
@@ -98,35 +103,41 @@ func registerPostAuthRoutes(wp *wallet.Provider, calc *pricing.Calculator, r *ch
 			WalletProvider:    wp,
 			HostingDomain:     cfg.HostingDomain,
 			MinHostingMinutes: cfg.MinHostingMinutes,
+			Logger:            logger,
 		}).ServeHTTP)
 
 		r.Get("/list", (&handlers.ListHandler{
 			WalletProvider: wp,
+			Logger:         logger,
 		}).ServeHTTP)
 
 		r.Post("/renew", (&handlers.RenewHandler{
 			Calculator:     calc,
 			WalletProvider: wp,
+			Logger:         logger,
 		}).ServeHTTP)
 
 		r.Get("/find", (&handlers.FindHandler{
 			WalletProvider: wp,
+			Logger:         logger,
 		}).ServeHTTP)
 	})
 }
 
-func registerPreAuthRoutes(cfg *config.Config, r *chi.Mux, store *storage.FileStore, wp *wallet.Provider, calc *pricing.Calculator) {
+func registerPreAuthRoutes(cfg *config.Config, r *chi.Mux, store *storage.FileStore, wp *wallet.Provider, calc *pricing.Calculator, logger *slog.Logger) {
 	// PUT /put - file upload via presigned URL
 	r.Put("/put", (&handlers.PutHandler{
 		Store:          store,
 		WalletProvider: wp,
 		HostingDomain:  cfg.HostingDomain,
+		Logger:         logger,
 	}).ServeHTTP)
 
 	// POST /quote - get storage price quote
 	r.Post("/quote", (&handlers.QuoteHandler{
 		Calculator:        calc,
 		MinHostingMinutes: cfg.MinHostingMinutes,
+		Logger:            logger,
 	}).ServeHTTP)
 }
 

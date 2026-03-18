@@ -40,8 +40,12 @@ type CreateAdParams struct {
 }
 
 // CreateAdvertisement constructs the PushDrop script and executes a CreateAction wallet call to mint an advertisement.
-func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network overlay.Network, p CreateAdParams) error {
-	lockingScript, err := buildPushDropScript(ctx, wallet, p)
+func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Network, p CreateAdParams) error {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return fmt.Errorf("wallet not initialized")
+	}
+	lockingScript, err := wp.buildPushDropScript(ctx, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
@@ -79,21 +83,31 @@ func CreateAdvertisement(ctx context.Context, wallet sdkWallet.Interface, networ
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
 
-	err = overlayBroadcast(result.Tx, network)
+	err = wp.overlayBroadcast(result.Tx, network)
 	if err != nil {
 		return err
 	}
+
+	wp.Logger.Debug("Advertisement broadcasted successfully",
+		"uhrpUrl", p.URL,
+		"expirySecs", p.ExpirySecs,
+		"uploader", p.Uploader,
+	)
 
 	return nil
 }
 
 // RenewAdvertisement consumes an existing advertisement output and creates a new one with the updated script.
-func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network overlay.Network, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
+func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Network, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return fmt.Errorf("wallet not initialized")
+	}
 	if matchedOutput == nil {
 		return fmt.Errorf("no matched output found")
 	}
 
-	lockingScript, err := decodeAndBuildPushDropLockingScript(ctx, wallet, matchedOutput, p)
+	lockingScript, err := wp.decodeAndBuildPushDropLockingScript(ctx, matchedOutput, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
 	}
@@ -134,7 +148,7 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	unlockingScript, inputIndex, err := buildPushDropUnlockingScript(ctx, wallet, matchedOutput, aResult)
+	unlockingScript, inputIndex, err := wp.buildPushDropUnlockingScript(ctx, matchedOutput, aResult)
 	if err != nil {
 		return fmt.Errorf("failed to build unlocking script: %w", err)
 	}
@@ -155,16 +169,23 @@ func RenewAdvertisement(ctx context.Context, wallet sdkWallet.Interface, network
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	err = overlayBroadcast(sResult.Tx, network)
+	err = wp.overlayBroadcast(sResult.Tx, network)
 	if err != nil {
 		return err
 	}
+
+	wp.Logger.Debug("Advertisement renewed successfully",
+		"uhrpUrl", p.URL,
+		"expirySecs", p.ExpirySecs,
+		"uploader", p.Uploader,
+	)
 
 	return nil
 }
 
 // buildPushDropScript builds a PushDrop-compatible locking script using the go-sdk template.
-func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p CreateAdParams) (*script.Script, error) {
+func (wp *Provider) buildPushDropScript(ctx context.Context, p CreateAdParams) (*script.Script, error) {
+	wallet := wp.GetWallet()
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
 	}
@@ -200,7 +221,8 @@ func buildPushDropScript(ctx context.Context, wallet sdkWallet.Interface, p Crea
 	return lockScript, nil
 }
 
-func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, result *sdkWallet.CreateActionResult) (*script.Script, uint32, error) {
+func (wp *Provider) buildPushDropUnlockingScript(ctx context.Context, matchedOutput *sdkWallet.Output, result *sdkWallet.CreateActionResult) (*script.Script, uint32, error) {
+	wallet := wp.GetWallet()
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
 	}
@@ -258,7 +280,8 @@ func buildPushDropUnlockingScript(ctx context.Context, wallet sdkWallet.Interfac
 	return unlockingScript, uint32(inputIndex), nil
 }
 
-func decodeAndBuildPushDropLockingScript(ctx context.Context, wallet sdkWallet.Interface, matchedOutput *sdkWallet.Output, p CreateAdParams) (*script.Script, error) {
+func (wp *Provider) decodeAndBuildPushDropLockingScript(ctx context.Context, matchedOutput *sdkWallet.Output, p CreateAdParams) (*script.Script, error) {
+	wallet := wp.GetWallet()
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
 	}
@@ -295,7 +318,7 @@ func decodeAndBuildPushDropLockingScript(ctx context.Context, wallet sdkWallet.I
 
 }
 
-func overlayBroadcast(tx []byte, network overlay.Network) error {
+func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network) error {
 	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
 		NetworkPreset: network,
 	})
@@ -309,14 +332,14 @@ func overlayBroadcast(tx []byte, network overlay.Network) error {
 	}
 
 	newTx := newBeef.FindAtomicTransactionByHash(newTxHash)
-	fmt.Println("Parsed signed transaction from BEEF", "version", newTx.Version, "inputs", len(newTx.Inputs), "outputs", len(newTx.Outputs))
+	wp.Logger.Debug("Parsed signed transaction from BEEF", "version", newTx.Version, "inputs", len(newTx.Inputs), "outputs", len(newTx.Outputs))
 
 	success, failure := broadcaster.Broadcast(newTx)
 	if failure != nil {
 		return fmt.Errorf("error occurred while handling the broadcasting: %w", failure)
 	}
 
-	fmt.Println("Success: ", success)
+	wp.Logger.Debug("Overlay broadcast response", "success", success)
 
 	return nil
 }

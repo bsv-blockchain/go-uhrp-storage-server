@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
@@ -12,6 +13,7 @@ import (
 // FindHandler handles GET /find requests.
 type FindHandler struct {
 	WalletProvider *walletpkg.Provider
+	Logger         *slog.Logger
 }
 
 type findReqBody struct {
@@ -71,13 +73,7 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	wallet := h.WalletProvider.GetWallet()
-	if wallet == nil {
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
-		return
-	}
-
-	_, meta, _, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, uhrpURL, identityKey.ToDERHex(), limit, offset)
+	_, meta, _, err := h.WalletProvider.FindAdvertisementByUhrpURL(r.Context(), uhrpURL, identityKey.ToDERHex(), limit, offset)
 	if err != nil {
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
 		return

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 type RenewHandler struct {
 	Calculator     *pricing.Calculator
 	WalletProvider *walletpkg.Provider
+	Logger         *slog.Logger
 }
 
 type RenewRequest struct {
@@ -64,13 +66,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wallet := h.WalletProvider.GetWallet()
-	if wallet == nil {
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
-		return
-	}
-
-	output, meta, beef, err := walletpkg.FindAdvertisementByUhrpURL(r.Context(), wallet, req.UhrpURL, identityKey.ToDERHex(), 200, 0)
+	output, meta, beef, err := h.WalletProvider.FindAdvertisementByUhrpURL(r.Context(), req.UhrpURL, identityKey.ToDERHex(), 200, 0)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No advertisement found for the given uhrpUrl.")
@@ -101,7 +97,7 @@ func (h *RenewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Uploader:      identityKey.ToDERHex(),
 	}
 
-	if err := walletpkg.RenewAdvertisement(r.Context(), wallet, h.WalletProvider.OverlayNetwork(), output, beef, p); err != nil {
+	if err := h.WalletProvider.RenewAdvertisement(r.Context(), h.WalletProvider.OverlayNetwork(), output, beef, p); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_RENEW", "Failed to renew advertisement on chain.")
 		return
 	}
