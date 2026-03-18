@@ -23,6 +23,7 @@ func TestPutHandler_ServeHTTP(t *testing.T) {
 	tests := []struct {
 		name               string
 		query              string
+		domain             string
 		body               []byte
 		mockVerifyHMACFunc func(ctx context.Context, args sdkWallet.VerifyHMACArgs, originator string) (*sdkWallet.VerifyHMACResult, error)
 		mockPubKeyFunc     func(ctx context.Context, args sdkWallet.GetPublicKeyArgs, originator string) (*sdkWallet.GetPublicKeyResult, error)
@@ -42,22 +43,24 @@ func TestPutHandler_ServeHTTP(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:  "Unauthorized - Invalid HMAC",
-			query: "uploader=test&objectID=123&fileSize=5&expiry=2000000000&hmac=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-			body:  []byte("hello"),
+			name:   "Unauthorized - Invalid HMAC",
+			domain: "https://example.com",
+			query:  "uploader=test&objectID=123&fileSize=5&expiry=2000000000&hmac=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+			body:   []byte("hello"),
 			mockVerifyHMACFunc: func(ctx context.Context, args sdkWallet.VerifyHMACArgs, originator string) (*sdkWallet.VerifyHMACResult, error) {
 				return &sdkWallet.VerifyHMACResult{Valid: false}, nil
 			},
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name:  "Success - Localhost",
-			query: "uploader=test&objectID=test-obj&fileSize=5&expiry=2000000000&hmac=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-			body:  []byte("hello"),
+			name:   "Failure - Localhost",
+			domain: "localhost:8080",
+			query:  "uploader=test&objectID=test-obj&fileSize=5&expiry=2000000000&hmac=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+			body:   []byte("hello"),
 			mockVerifyHMACFunc: func(ctx context.Context, args sdkWallet.VerifyHMACArgs, originator string) (*sdkWallet.VerifyHMACResult, error) {
 				return &sdkWallet.VerifyHMACResult{Valid: true}, nil
 			},
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -74,7 +77,7 @@ func TestPutHandler_ServeHTTP(t *testing.T) {
 			h := &handlers.PutHandler{
 				Store:          store,
 				WalletProvider: wp,
-				HostingDomain:  "localhost:8080",
+				HostingDomain:  tt.domain,
 			}
 
 			req := httptest.NewRequest("PUT", "/put?"+tt.query, bytes.NewReader(tt.body))

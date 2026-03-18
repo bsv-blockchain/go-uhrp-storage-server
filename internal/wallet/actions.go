@@ -264,6 +264,9 @@ func decodeAndBuildPushDropLockingScript(ctx context.Context, wallet sdkWallet.I
 	}
 
 	prevLockingScript := pushdrop.Decode((*script.Script)(&matchedOutput.LockingScript))
+	if prevLockingScript == nil || len(prevLockingScript.Fields) < 5 {
+		return nil, fmt.Errorf("invalid or missing pushdrop locking script")
+	}
 
 	fields := [][]byte{
 		prevLockingScript.Fields[0],
