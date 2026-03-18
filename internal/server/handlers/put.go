@@ -3,7 +3,7 @@ package handlers
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +20,7 @@ type PutHandler struct {
 	Store          *storage.FileStore
 	WalletProvider *walletpkg.Provider
 	HostingDomain  string
+	Logger         *slog.Logger
 }
 
 // ServeHTTP handles the /put endpoint request for file upload.
@@ -50,7 +51,6 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		responses.WriteError(w, http.StatusBadRequest, "", "Failed to read request body")
@@ -58,20 +58,13 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Verify size
 	fileSize, _ := strconv.ParseInt(fileSizeStr, 10, 64)
 	if fileSize != int64(len(body)) {
 		responses.WriteError(w, http.StatusBadRequest, "", "Size mismatch")
 		return
 	}
 
-	wallet := h.WalletProvider.GetWallet()
-	if wallet == nil {
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized")
-		return
-	}
-
-	if err := walletpkg.VerifyUploaderHMAC(r.Context(), wallet, fileSizeStr, objectID, expiry, uploader, hmac); err != nil {
+	if err := h.WalletProvider.VerifyUploaderHMAC(r.Context(), fileSizeStr, objectID, expiry, uploader, hmac); err != nil {
 		if strings.Contains(err.Error(), "invalid HMAC") {
 			responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Invalid HMAC")
 		} else {
@@ -80,21 +73,18 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if file already exists
 	if h.Store.Exists(objectID) {
 		responses.WriteError(w, http.StatusBadRequest, "", "File exists")
 		return
 	}
 
-	// Write file
 	if err := h.Store.Write(objectID, body); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to write file")
 		return
 	}
 
-	// Create UHRP advertisement
 	if strings.HasPrefix(h.HostingDomain, "localhost") {
-		log.Println("Not advertising, localhost")
+		slog.Debug("Not advertising, localhost")
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "No advertising in localhost.")
 		return
 	}
@@ -116,7 +106,7 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = walletpkg.CreateAdvertisement(r.Context(), wallet, h.WalletProvider.OverlayNetwork(), walletpkg.CreateAdParams{
+	err = h.WalletProvider.CreateAdvertisement(r.Context(), h.WalletProvider.OverlayNetwork(), walletpkg.CreateAdParams{
 		Hash:          hash,
 		URL:           fmt.Sprintf("https://%s/cdn/%s", h.HostingDomain, objectID),
 		ExpirySecs:    expiryInt,
@@ -127,12 +117,10 @@ func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("Failed to create UHRP advertisement: %v", err)
+		h.Logger.Error("Failed to create UHRP advertisement", "error", err)
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to broadcast advertisement")
 		return
 	}
-
-	log.Printf("File uploaded: objectID=%s, size=%d, uploader=%s", objectID, len(body), uploader)
 
 	responses.WriteJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }

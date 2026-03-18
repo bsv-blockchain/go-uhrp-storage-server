@@ -14,7 +14,11 @@ const (
 )
 
 // CreateUploaderHMAC creates an HMAC for the given string using the wallet.
-func CreateUploaderHMAC(ctx context.Context, wallet sdkWallet.Interface, queryStr string) (string, error) {
+func (wp *Provider) CreateUploaderHMAC(ctx context.Context, queryStr string) (string, error) {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return "", fmt.Errorf("wallet not initialized")
+	}
 	hmacResult, err := wallet.CreateHMAC(ctx, sdkWallet.CreateHMACArgs{
 		EncryptionArgs: sdkWallet.EncryptionArgs{
 			ProtocolID: sdkWallet.Protocol{
@@ -33,7 +37,11 @@ func CreateUploaderHMAC(ctx context.Context, wallet sdkWallet.Interface, querySt
 }
 
 // VerifyUploaderHMAC verifies that the uploader provided a valid HMAC over the file metadata.
-func VerifyUploaderHMAC(ctx context.Context, wallet sdkWallet.Interface, fileSizeStr, objectID, expiry, uploader, hmacHex string) error {
+func (wp *Provider) VerifyUploaderHMAC(ctx context.Context, fileSizeStr, objectID, expiry, uploader, hmacHex string) error {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return fmt.Errorf("wallet not initialized")
+	}
 	str := fmt.Sprintf("fileSize=%s&objectID=%s&expiry=%s&uploader=%s", fileSizeStr, objectID, expiry, uploader)
 
 	hmacBytes, err := hex.DecodeString(hmacHex)

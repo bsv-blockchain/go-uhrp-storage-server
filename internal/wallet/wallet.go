@@ -3,7 +3,7 @@ package wallet
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/bsv-blockchain/go-sdk/overlay"
@@ -23,14 +23,16 @@ type Provider struct {
 	bsvNetwork       string
 	wallet           sdkWallet.Interface
 	mu               sync.Mutex
+	Logger           *slog.Logger
 }
 
 // NewProvider creates a wallet provider.
-func NewProvider(serverPrivateKey, walletStorageURL, bsvNetwork string) *Provider {
+func NewProvider(serverPrivateKey, walletStorageURL, bsvNetwork string, logger *slog.Logger) *Provider {
 	return &Provider{
 		serverPrivateKey: serverPrivateKey,
 		walletStorageURL: walletStorageURL,
 		bsvNetwork:       bsvNetwork,
+		Logger:           logger.With("component", "wallet_provider"),
 	}
 }
 
@@ -71,7 +73,7 @@ func (p *Provider) InitWallet(ctx context.Context) error {
 	}
 
 	p.wallet = w
-	log.Printf("Wallet initialized, identity key: %s", privKey.PubKey().ToDERHex())
+	p.Logger.Info("Wallet initialized", "identityKey", privKey.PubKey().ToDERHex())
 	return nil
 }
 

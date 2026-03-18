@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/storage"
@@ -49,11 +50,14 @@ func main() {
 	}
 
 	// 3. Upload File
-	result := storage.UploadFileResult{
-		Published: true,
-		UhrpURL:   "uhrp://236452WUcLCMgzS5L4Cw6w4krHi4h2xVoRNYQXy61bWpVJVXdj",
+	fileContent := []byte("TEST123 at: " + time.Now().String())
+	retentionMinutes := 60
+	file := storage.UploadableFile{
+		Data: fileContent,
+		Type: "text/plain",
 	}
 
+	result, err := uploader.PublishFile(context.Background(), file, retentionMinutes)
 	if result.Published {
 		fmt.Printf("File published successfully! UHRP URL: %s\n", result.UhrpURL)
 

@@ -14,6 +14,8 @@ type Config struct {
 	WalletStorageURL  string
 	PricePerGBMonth   float64
 	MinHostingMinutes int
+	LogLevel          string
+	LogFormat         string
 }
 
 // Load reads configuration from environment variables.
@@ -26,6 +28,8 @@ func Load() (*Config, error) {
 		WalletStorageURL:  os.Getenv("WALLET_STORAGE_URL"),
 		PricePerGBMonth:   getEnvFloat("PRICE_PER_GB_MO", 0.03),
 		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
+		LogLevel:          getEnvDefault("LOG_LEVEL", "info"),
+		LogFormat:         getEnvDefault("LOG_FORMAT", "json"),
 	}
 	return cfg, nil
 }

@@ -9,9 +9,9 @@ func ParseCustomInstructions(s string) map[string]string {
 	if s == "" {
 		return nil
 	}
-	var m map[string]string
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
+	result := make(map[string]string)
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
 		return nil
 	}
-	return m
+	return result
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
-	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
@@ -44,12 +43,7 @@ func RequestPriceCalculator(calc *pricing.Calculator, wp *wallet.Provider) func(
 
 			var payload renewRequest
 			if err := json.Unmarshal(bodyBytes, &payload); err == nil {
-				wallet := wp.GetWallet()
-				if wallet == nil {
-					return 0, fmt.Errorf("wallet not available for renew price calculation")
-				}
-
-				fileSize, err := walletpkg.GetFileSize(req.Context(), wallet, payload.UhrpURL, identityKey.ToDERHex())
+				fileSize, err := wp.GetFileSize(req.Context(), payload.UhrpURL, identityKey.ToDERHex())
 				if err != nil {
 					return 0, err
 				}
