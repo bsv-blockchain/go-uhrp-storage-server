@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -70,8 +71,9 @@ func TestFindAdvertisementByUhrpURL(t *testing.T) {
 					return &sdkWallet.ListOutputsResult{Outputs: tt.mockOutputs}, nil
 				},
 			}
-
-			out, meta, _, err := wallet.FindAdvertisementByUhrpURL(context.Background(), mw, uhrpURL, uploaderKey, 0, 0)
+			wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+			wp.SetWallet(mw)
+			out, meta, _, err := wp.FindAdvertisementByUhrpURL(context.Background(), uhrpURL, uploaderKey, 0, 0)
 
 			if tt.expectedError != "" {
 				if err == nil || !contains(err.Error(), tt.expectedError) {
@@ -121,7 +123,10 @@ func TestListAdvertisementsByUploader(t *testing.T) {
 		},
 	}
 
-	metas, err := wallet.ListAdvertisementsByUploader(context.Background(), mw, uploaderKey, 0, 0)
+	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp.SetWallet(mw)
+
+	metas, err := wp.ListAdvertisementsByUploader(context.Background(), uploaderKey, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

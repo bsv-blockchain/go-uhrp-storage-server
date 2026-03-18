@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http/httptest"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestRequestPriceCalculator(t *testing.T) {
 	pub, _ := ec.PublicKeyFromString(pubHex)
 
 	calc := pricing.NewCalculator(0.03, mockOracle{})
-	wp := walletpkg.NewProvider("", "", "")
+	wp := walletpkg.NewProvider("", "", "", slog.Default())
 
 	fn := handlers.RequestPriceCalculator(calc, wp)
 

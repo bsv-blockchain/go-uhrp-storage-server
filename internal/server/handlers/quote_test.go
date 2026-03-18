@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,6 +56,7 @@ func TestQuoteHandler_ServeHTTP(t *testing.T) {
 			h := &handlers.QuoteHandler{
 				Calculator:        pricing.NewCalculator(0.03, mockOracle{}),
 				MinHostingMinutes: 0,
+				Logger:            slog.Default(),
 			}
 
 			var bodyReader *bytes.Reader

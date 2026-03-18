@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,7 +79,7 @@ func TestUploadHandler_ServeHTTP(t *testing.T) {
 			mw := &mocks.MockWallet{
 				CreateHMACFunc: tt.mockHMACFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "")
+			wp := walletpkg.NewProvider("", "", "", slog.Default())
 			wp.SetWallet(mw)
 
 			calc := pricing.NewCalculator(0.03, mockOracle{})
@@ -87,6 +88,7 @@ func TestUploadHandler_ServeHTTP(t *testing.T) {
 				WalletProvider:    wp,
 				HostingDomain:     "localhost:8080",
 				MinHostingMinutes: 10,
+				Logger:            slog.Default(),
 			}
 
 			bodyBytes, _ := json.Marshal(tt.body)

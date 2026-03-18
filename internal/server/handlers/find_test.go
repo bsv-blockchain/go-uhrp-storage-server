@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -79,10 +80,10 @@ func TestFindHandler_ServeHTTP(t *testing.T) {
 			mw := &mocks.MockWallet{
 				ListOutputsFunc: tt.mockListFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "")
+			wp := walletpkg.NewProvider("", "", "", slog.Default())
 			wp.SetWallet(mw)
 
-			h := &handlers.FindHandler{WalletProvider: wp}
+			h := &handlers.FindHandler{WalletProvider: wp, Logger: slog.Default()}
 
 			url := "/find"
 			if tt.uhrpURL != "" {

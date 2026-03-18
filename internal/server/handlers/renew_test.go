@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,13 +121,14 @@ func TestRenewHandler_ServeHTTP(t *testing.T) {
 				GetPublicKeyFunc:    tt.mockPubKeyFunc,
 				CreateSignatureFunc: tt.mockSigFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "")
+			wp := walletpkg.NewProvider("", "", "", slog.Default())
 			wp.SetWallet(mw)
 
 			calc := pricing.NewCalculator(0.03, mockOracle{})
 			h := &handlers.RenewHandler{
 				Calculator:     calc,
 				WalletProvider: wp,
+				Logger:         slog.Default(),
 			}
 
 			bodyBytes, _ := json.Marshal(tt.body)

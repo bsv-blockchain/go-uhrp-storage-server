@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,10 +72,10 @@ func TestListHandler_ServeHTTP(t *testing.T) {
 			mw := &mocks.MockWallet{
 				ListOutputsFunc: tt.mockListFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "")
+			wp := walletpkg.NewProvider("", "", "", slog.Default())
 			wp.SetWallet(mw)
 
-			h := &handlers.ListHandler{WalletProvider: wp}
+			h := &handlers.ListHandler{WalletProvider: wp, Logger: slog.Default()}
 
 			req := httptest.NewRequest("GET", "/list", nil)
 			if tt.identityKey != nil {

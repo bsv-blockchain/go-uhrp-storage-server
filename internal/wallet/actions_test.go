@@ -2,6 +2,7 @@ package wallet_test
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -43,7 +44,9 @@ func TestCreateAdvertisement(t *testing.T) {
 		Uploader:      "uploader",
 	}
 
-	err := wallet.CreateAdvertisement(context.Background(), mw, overlay.NetworkMainnet, params)
+	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp.SetWallet(mw)
+	err := wp.CreateAdvertisement(context.Background(), overlay.NetworkMainnet, params)
 	// We expect a parsing error because our mock BEEF is just zeros,
 	// but this proves the logic reached overlayBroadcast.
 	if err != nil && !strings.Contains(err.Error(), "error parsing signed transaction bytes into BEEF") &&
@@ -88,7 +91,9 @@ func TestRenewAdvertisement_Simple(t *testing.T) {
 		Uploader: uploaderKey,
 	}
 
-	err := wallet.RenewAdvertisement(context.Background(), mw, overlay.NetworkMainnet, output, nil, params)
+	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp.SetWallet(mw)
+	err := wp.RenewAdvertisement(context.Background(), overlay.NetworkMainnet, output, nil, params)
 	if err == nil {
 		t.Error("expected error due to invalid BEEF, got nil")
 	}

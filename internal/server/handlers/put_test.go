@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -71,13 +72,14 @@ func TestPutHandler_ServeHTTP(t *testing.T) {
 				GetPublicKeyFunc: tt.mockPubKeyFunc,
 				CreateActionFunc: tt.mockActionFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "")
+			wp := walletpkg.NewProvider("", "", "", slog.Default())
 			wp.SetWallet(mw)
 
 			h := &handlers.PutHandler{
 				Store:          store,
 				WalletProvider: wp,
 				HostingDomain:  tt.domain,
+				Logger:         slog.Default(),
 			}
 
 			req := httptest.NewRequest("PUT", "/put?"+tt.query, bytes.NewReader(tt.body))
