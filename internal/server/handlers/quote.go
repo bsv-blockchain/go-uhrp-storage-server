@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 type QuoteHandler struct {
 	Calculator        *pricing.Calculator
 	MinHostingMinutes int
+	Logger            *slog.Logger
 }
 
 type quoteRequest struct {

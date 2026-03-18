@@ -22,7 +22,11 @@ type FileMetadata struct {
 }
 
 // FindAdvertisementByUhrpURL finds a single UHRP advertisement output by its UHRP URL.
-func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string, limit, offset uint32) (*sdkWallet.Output, *FileMetadata, []byte, error) {
+func (wp *Provider) FindAdvertisementByUhrpURL(ctx context.Context, uhrpURL, uploaderIdentityKeyHex string, limit, offset uint32) (*sdkWallet.Output, *FileMetadata, []byte, error) {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return nil, nil, nil, fmt.Errorf("wallet not initialized")
+	}
 	includeCustom := true
 	includeTags := true
 	includeLocking := sdkWallet.OutputIncludeLockingScripts
@@ -57,7 +61,7 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 	}
 
 	output := listResult.Outputs[0]
-	metadata := mapOutputToMetadata(output)
+	metadata := wp.mapOutputToMetadata(output)
 
 	if metadata.ExpiryTime > 0 && metadata.ExpiryTime < time.Now().Unix() {
 		return nil, nil, nil, fmt.Errorf("advertisement for uhrpUrl is expired")
@@ -67,8 +71,8 @@ func FindAdvertisementByUhrpURL(ctx context.Context, wallet sdkWallet.Interface,
 }
 
 // GetFileSize retrieves the file size for a given UHRP URL.
-func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploaderIdentityKeyHex string) (int64, error) {
-	_, meta, _, err := FindAdvertisementByUhrpURL(ctx, wallet, uhrpURL, uploaderIdentityKeyHex, 200, 0)
+func (wp *Provider) GetFileSize(ctx context.Context, uhrpURL, uploaderIdentityKeyHex string) (int64, error) {
+	_, meta, _, err := wp.FindAdvertisementByUhrpURL(ctx, uhrpURL, uploaderIdentityKeyHex, 200, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -79,7 +83,11 @@ func GetFileSize(ctx context.Context, wallet sdkWallet.Interface, uhrpURL, uploa
 }
 
 // ListAdvertisementsByUploader lists all advertisements for a specific uploader.
-func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interface, uploaderIdentityKeyHex string, limit, offset uint32) ([]FileMetadata, error) {
+func (wp *Provider) ListAdvertisementsByUploader(ctx context.Context, uploaderIdentityKeyHex string, limit, offset uint32) ([]FileMetadata, error) {
+	wallet := wp.GetWallet()
+	if wallet == nil {
+		return nil, fmt.Errorf("wallet not initialized")
+	}
 	includeCustom := true
 	includeTags := true
 	if limit == 0 {
@@ -102,7 +110,7 @@ func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interfac
 	now := time.Now().Unix()
 
 	for _, output := range result.Outputs {
-		meta := mapOutputToMetadata(output)
+		meta := wp.mapOutputToMetadata(output)
 
 		if meta.ExpiryTime > 0 && meta.ExpiryTime < now {
 			continue
@@ -125,7 +133,7 @@ func ListAdvertisementsByUploader(ctx context.Context, wallet sdkWallet.Interfac
 	return metadatas, nil
 }
 
-func mapOutputToMetadata(output sdkWallet.Output) FileMetadata {
+func (wp *Provider) mapOutputToMetadata(output sdkWallet.Output) FileMetadata {
 	response := FileMetadata{}
 
 	for _, tag := range output.Tags {

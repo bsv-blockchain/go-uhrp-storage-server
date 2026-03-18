@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ type UploadHandler struct {
 	WalletProvider    *walletpkg.Provider
 	HostingDomain     string
 	MinHostingMinutes int
+	Logger            *slog.Logger
 }
 
 type uploadRequest struct {
@@ -93,14 +95,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryStr := fmt.Sprintf("fileSize=%d&objectID=%s&expiry=%s&uploader=%s",
 		req.FileSize, objectIdentifier, customTime, uploaderKey)
 
-	// Create HMAC using the wallet to secure the upload URL
-	wallet := h.WalletProvider.GetWallet()
-	if wallet == nil {
-		responses.WriteError(w, http.StatusInternalServerError, "ERR_NO_WALLET", "Wallet not initialized.")
-		return
-	}
-
-	hmac, err := walletpkg.CreateUploaderHMAC(r.Context(), wallet, queryStr)
+	hmac, err := h.WalletProvider.CreateUploaderHMAC(r.Context(), queryStr)
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_HMAC", "Failed to create HMAC.")
 		return
