@@ -340,13 +340,17 @@ func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTra
 	newTx := newBeef.FindAtomicTransactionByHash(newTxHash)
 	wp.Logger.Debug("Parsed signed transaction from BEEF", "version", newTx.Version, "inputs", len(newTx.Inputs), "outputs", len(newTx.Outputs))
 
+	wp.Logger.Debug("Broadcasting to overlay network", "topic", "tm_uhrp", "slapTrackers", slapTrackers)
 	success, failure := broadcaster.Broadcast(newTx)
 	if failure != nil {
-		wp.Logger.Warn("Overlay broadcast failed — file stored but not yet advertised on UHRP network", "error", failure)
+		wp.Logger.Warn("Overlay broadcast failed — file stored but not yet advertised on UHRP network",
+			"code", failure.Code,
+			"description", failure.Description,
+		)
 		return nil
 	}
 
-	wp.Logger.Debug("Overlay broadcast response", "success", success)
+	wp.Logger.Debug("Overlay broadcast response", "txid", success.Txid, "message", success.Message)
 
 	return nil
 }

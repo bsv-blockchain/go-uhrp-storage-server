@@ -24,6 +24,7 @@ var defaultSLAPTrackers = []string{
 	"https://overlay-us-1.bsvb.tech",
 	"https://overlay-eu-1.bsvb.tech",
 	"https://overlay-ap-1.bsvb.tech",
+	"https://users.bapp.dev",
 }
 
 // Load reads configuration from environment variables.
