@@ -22,7 +22,7 @@ func TestRequestPriceCalculator(t *testing.T) {
 	pub, _ := ec.PublicKeyFromString(pubHex)
 
 	calc := pricing.NewCalculator(0.03, mockOracle{})
-	wp := walletpkg.NewProvider("", "", "", slog.Default())
+	wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
 
 	fn := handlers.RequestPriceCalculator(calc, wp)
 

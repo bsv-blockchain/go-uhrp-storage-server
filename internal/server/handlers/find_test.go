@@ -80,7 +80,7 @@ func TestFindHandler_ServeHTTP(t *testing.T) {
 			mw := &mocks.MockWallet{
 				ListOutputsFunc: tt.mockListFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "", slog.Default())
+			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
 			wp.SetWallet(mw)
 
 			h := &handlers.FindHandler{WalletProvider: wp, Logger: slog.Default()}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/bsv-blockchain/go-sdk/overlay"
+	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
 	"github.com/bsv-blockchain/go-sdk/overlay/topic"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/storage"
@@ -83,7 +84,7 @@ func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Net
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
 
-	err = wp.overlayBroadcast(result.Tx, network)
+	err = wp.overlayBroadcast(result.Tx, network, wp.slapTrackers)
 	if err != nil {
 		return err
 	}
@@ -169,7 +170,7 @@ func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Netw
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	err = wp.overlayBroadcast(sResult.Tx, network)
+	err = wp.overlayBroadcast(sResult.Tx, network, wp.slapTrackers)
 	if err != nil {
 		return err
 	}
@@ -318,9 +319,14 @@ func (wp *Provider) decodeAndBuildPushDropLockingScript(ctx context.Context, mat
 
 }
 
-func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network) error {
+func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTrackers []string) error {
+	resolver := lookup.NewLookupResolver(&lookup.LookupResolver{
+		NetworkPreset: network,
+		SLAPTrackers:  slapTrackers,
+	})
 	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
 		NetworkPreset: network,
+		Resolver:      resolver,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create topic broadcaster: %w", err)
@@ -336,7 +342,8 @@ func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network) error {
 
 	success, failure := broadcaster.Broadcast(newTx)
 	if failure != nil {
-		return fmt.Errorf("error occurred while handling the broadcasting: %w", failure)
+		wp.Logger.Warn("Overlay broadcast failed — file stored but not yet advertised on UHRP network", "error", failure)
+		return nil
 	}
 
 	wp.Logger.Debug("Overlay broadcast response", "success", success)

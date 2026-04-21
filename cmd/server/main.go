@@ -48,7 +48,7 @@ func main() {
 	exchangeRateProvider := pricing.NewWhatsOnChainProvider()
 	calc := pricing.NewCalculator(cfg.PricePerGBMonth, exchangeRateProvider)
 	store := storage.NewFileStore(publicDir)
-	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork, baseLogger)
+	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork, cfg.SLAPTrackers, baseLogger)
 
 	// Initialize wallet using wallet-toolbox
 	if cfg.ServerPrivateKey != "" && cfg.WalletStorageURL != "" {

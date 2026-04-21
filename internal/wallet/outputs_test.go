@@ -71,7 +71,7 @@ func TestFindAdvertisementByUhrpURL(t *testing.T) {
 					return &sdkWallet.ListOutputsResult{Outputs: tt.mockOutputs}, nil
 				},
 			}
-			wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+			wp := wallet.NewProvider("", "", "mainnet", nil, slog.Default())
 			wp.SetWallet(mw)
 			out, meta, _, err := wp.FindAdvertisementByUhrpURL(context.Background(), uhrpURL, uploaderKey, 0, 0)
 
@@ -123,7 +123,7 @@ func TestListAdvertisementsByUploader(t *testing.T) {
 		},
 	}
 
-	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp := wallet.NewProvider("", "", "mainnet", nil, slog.Default())
 	wp.SetWallet(mw)
 
 	metas, err := wp.ListAdvertisementsByUploader(context.Background(), uploaderKey, 0, 0)

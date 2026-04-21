@@ -44,7 +44,7 @@ func TestCreateAdvertisement(t *testing.T) {
 		Uploader:      "uploader",
 	}
 
-	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp := wallet.NewProvider("", "", "mainnet", nil, slog.Default())
 	wp.SetWallet(mw)
 	err := wp.CreateAdvertisement(context.Background(), overlay.NetworkMainnet, params)
 	// We expect a parsing error because our mock BEEF is just zeros,
@@ -91,7 +91,7 @@ func TestRenewAdvertisement_Simple(t *testing.T) {
 		Uploader: uploaderKey,
 	}
 
-	wp := wallet.NewProvider("", "", "mainnet", slog.Default())
+	wp := wallet.NewProvider("", "", "mainnet", nil, slog.Default())
 	wp.SetWallet(mw)
 	err := wp.RenewAdvertisement(context.Background(), overlay.NetworkMainnet, output, nil, params)
 	if err == nil {

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all server configuration.
@@ -16,6 +17,13 @@ type Config struct {
 	MinHostingMinutes int
 	LogLevel          string
 	LogFormat         string
+	SLAPTrackers      []string
+}
+
+var defaultSLAPTrackers = []string{
+	"https://overlay-us-1.bsvb.tech",
+	"https://overlay-eu-1.bsvb.tech",
+	"https://overlay-ap-1.bsvb.tech",
 }
 
 // Load reads configuration from environment variables.
@@ -30,6 +38,7 @@ func Load() (*Config, error) {
 		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
 		LogLevel:          getEnvDefault("LOG_LEVEL", "info"),
 		LogFormat:         getEnvDefault("LOG_FORMAT", "json"),
+		SLAPTrackers:      getEnvStringSlice("SLAP_TRACKERS", defaultSLAPTrackers),
 	}
 	return cfg, nil
 }
@@ -59,4 +68,18 @@ func getEnvInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func getEnvStringSlice(key string, def []string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	var result []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }

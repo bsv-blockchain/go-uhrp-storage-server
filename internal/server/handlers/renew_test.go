@@ -121,7 +121,7 @@ func TestRenewHandler_ServeHTTP(t *testing.T) {
 				GetPublicKeyFunc:    tt.mockPubKeyFunc,
 				CreateSignatureFunc: tt.mockSigFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "", slog.Default())
+			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
 			wp.SetWallet(mw)
 
 			calc := pricing.NewCalculator(0.03, mockOracle{})

@@ -21,17 +21,19 @@ type Provider struct {
 	serverPrivateKey string
 	walletStorageURL string
 	bsvNetwork       string
+	slapTrackers     []string
 	wallet           sdkWallet.Interface
 	mu               sync.Mutex
 	Logger           *slog.Logger
 }
 
 // NewProvider creates a wallet provider.
-func NewProvider(serverPrivateKey, walletStorageURL, bsvNetwork string, logger *slog.Logger) *Provider {
+func NewProvider(serverPrivateKey, walletStorageURL, bsvNetwork string, slapTrackers []string, logger *slog.Logger) *Provider {
 	return &Provider{
 		serverPrivateKey: serverPrivateKey,
 		walletStorageURL: walletStorageURL,
 		bsvNetwork:       bsvNetwork,
+		slapTrackers:     slapTrackers,
 		Logger:           logger.With("component", "wallet_provider"),
 	}
 }

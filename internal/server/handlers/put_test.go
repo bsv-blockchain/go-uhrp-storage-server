@@ -72,7 +72,7 @@ func TestPutHandler_ServeHTTP(t *testing.T) {
 				GetPublicKeyFunc: tt.mockPubKeyFunc,
 				CreateActionFunc: tt.mockActionFunc,
 			}
-			wp := walletpkg.NewProvider("", "", "", slog.Default())
+			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
 			wp.SetWallet(mw)
 
 			h := &handlers.PutHandler{
