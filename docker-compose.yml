@@ -1,0 +1,16 @@
+services:
+  uhrp-storage-server:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=text
+    volumes:
+      - storage-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  storage-data:
