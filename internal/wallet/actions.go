@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
+	"net/http"
 
 	"github.com/bsv-blockchain/go-sdk/overlay"
 	"github.com/bsv-blockchain/go-sdk/overlay/lookup"
@@ -15,6 +17,40 @@ import (
 	"github.com/bsv-blockchain/go-sdk/util"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
+
+// loggingLookupFacilitator wraps HTTPSOverlayLookupFacilitator and adds DEBUG logging.
+type loggingLookupFacilitator struct {
+	inner  *lookup.HTTPSOverlayLookupFacilitator
+	logger *slog.Logger
+}
+
+func (f *loggingLookupFacilitator) Lookup(ctx context.Context, url string, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
+	f.logger.Debug("Lookup query", "url", url, "service", question.Service)
+	answer, err := f.inner.Lookup(ctx, url, question)
+	if err != nil {
+		f.logger.Debug("Lookup failed", "url", url, "service", question.Service, "error", err)
+	} else {
+		f.logger.Debug("Lookup success", "url", url, "service", question.Service, "type", answer.Type, "outputs", len(answer.Outputs))
+	}
+	return answer, err
+}
+
+// loggingBroadcastFacilitator wraps HTTPSOverlayBroadcastFacilitator and adds DEBUG logging.
+type loggingBroadcastFacilitator struct {
+	inner  *topic.HTTPSOverlayBroadcastFacilitator
+	logger *slog.Logger
+}
+
+func (f *loggingBroadcastFacilitator) Send(url string, taggedBEEF *overlay.TaggedBEEF) (*overlay.Steak, error) {
+	f.logger.Debug("Sending to overlay host", "url", url, "topics", taggedBEEF.Topics)
+	steak, err := f.inner.Send(url, taggedBEEF)
+	if err != nil {
+		f.logger.Debug("Overlay send failed", "url", url, "error", err)
+	} else {
+		f.logger.Debug("Overlay send success", "url", url, "steak", steak)
+	}
+	return steak, err
+}
 
 const (
 	WalletName             = "uhrp-server"
@@ -323,10 +359,18 @@ func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTra
 	resolver := lookup.NewLookupResolver(&lookup.LookupResolver{
 		NetworkPreset: network,
 		SLAPTrackers:  slapTrackers,
+		Facilitator: &loggingLookupFacilitator{
+			inner:  &lookup.HTTPSOverlayLookupFacilitator{Client: http.DefaultClient},
+			logger: wp.Logger,
+		},
 	})
 	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
 		NetworkPreset: network,
 		Resolver:      resolver,
+		Facilitator: &loggingBroadcastFacilitator{
+			inner:  &topic.HTTPSOverlayBroadcastFacilitator{Client: http.DefaultClient},
+			logger: wp.Logger,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create topic broadcaster: %w", err)
