@@ -2,6 +2,7 @@ package wallet_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"log/slog"
 	"strings"
 	"testing"
@@ -15,10 +16,22 @@ import (
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet/mocks"
 )
 
+// testSignature signs a 32-byte digest. go-wallet-toolbox installs a GoBDK
+// signer that rejects messages that are not already a SHA-256 digest.
+func testSignature(t *testing.T, priv *ec.PrivateKey) *ec.Signature {
+	t.Helper()
+	digest := sha256.Sum256([]byte("test"))
+	sig, err := priv.Sign(digest[:])
+	if err != nil {
+		t.Fatalf("sign test digest: %v", err)
+	}
+	return sig
+}
+
 func TestCreateAdvertisement(t *testing.T) {
 	priv, _ := ec.PrivateKeyFromHex("0000000000000000000000000000000000000000000000000000000000000001")
 	pub := priv.PubKey()
-	dummySig, _ := priv.Sign([]byte("test"))
+	dummySig := testSignature(t, priv)
 
 	mw := &mocks.MockWallet{
 		CreateActionFunc: func(ctx context.Context, args sdkWallet.CreateActionArgs, originator string) (*sdkWallet.CreateActionResult, error) {
@@ -58,7 +71,7 @@ func TestCreateAdvertisement(t *testing.T) {
 func TestRenewAdvertisement_Simple(t *testing.T) {
 	priv, _ := ec.PrivateKeyFromHex("0000000000000000000000000000000000000000000000000000000000000001")
 	pub := priv.PubKey()
-	dummySig, _ := priv.Sign([]byte("test"))
+	dummySig := testSignature(t, priv)
 
 	uhrpURL := "uhrp:test"
 	uploaderKey := "02cbc1404c96562479633e721b0e01476d05ebecfc6797a7e9df533f81daed48ed"
