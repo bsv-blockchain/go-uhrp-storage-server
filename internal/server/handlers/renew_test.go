@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
@@ -24,7 +25,13 @@ import (
 func TestRenewHandler_ServeHTTP(t *testing.T) {
 	priv, _ := ec.PrivateKeyFromHex("0000000000000000000000000000000000000000000000000000000000000001")
 	pub := priv.PubKey()
-	dummySig, _ := priv.Sign([]byte("test"))
+	// Sign a SHA-256 digest. Importing the wallet package installs go-wallet-toolbox's
+	// GoBDK signer, which rejects messages that are not already 32 bytes.
+	digest := sha256.Sum256([]byte("test"))
+	dummySig, err := priv.Sign(digest[:])
+	if err != nil {
+		t.Fatalf("sign test digest: %v", err)
+	}
 	zeroHash, _ := chainhash.NewHash(make([]byte, 32))
 
 	tests := []struct {
