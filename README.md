@@ -148,4 +148,4 @@ Set `UHRP_AUTH_ENABLED=true` to enable the auth-dependent tests once `/.well-kno
 
 ## License
 
-See LICENSE.txt
+Apache License 2.0. See [LICENSE](LICENSE).
