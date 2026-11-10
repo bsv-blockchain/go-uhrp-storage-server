@@ -33,7 +33,7 @@ type UploadRequest struct {
 type UploadResponse struct {
 	Status          string            `json:"status"`
 	UploadURL       string            `json:"uploadURL,omitempty"`
-	RequiredHeaders map[string]string `json:"requiredHeaders,omitempty"`
+	RequiredHeaders map[string]string `json:"requiredHeaders"`
 	Amount          int64             `json:"amount,omitempty"`
 	Description     string            `json:"description,omitempty"`
 	Code            string            `json:"code,omitempty"`
