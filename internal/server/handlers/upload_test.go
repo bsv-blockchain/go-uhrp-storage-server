@@ -112,6 +112,18 @@ func TestUploadHandler_ServeHTTP(t *testing.T) {
 					t.Errorf("expected code %s, got %s", tt.expectedCode, resp.Code)
 				}
 			}
+
+			// The @bsv/sdk StorageUploader rejects a success reply without
+			// requiredHeaders, so an empty set must still be sent as {}.
+			if tt.expectedStatus == http.StatusOK {
+				var raw map[string]json.RawMessage
+				if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				if got := string(raw["requiredHeaders"]); got != "{}" {
+					t.Errorf("expected requiredHeaders {}, got %q. Body: %s", got, w.Body.String())
+				}
+			}
 		})
 	}
 }
