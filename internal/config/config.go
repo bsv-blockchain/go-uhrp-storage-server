@@ -14,6 +14,7 @@ type Config struct {
 	HostingDomain     string
 	BSVNetwork        string
 	WalletStorageURL  string
+	ExchangeRateURL   string
 	PricePerGBMonth   float64
 	MinHostingMinutes int
 	LogLevel          string
@@ -40,6 +41,7 @@ func Load() (*Config, error) {
 		HostingDomain:     os.Getenv("HOSTING_DOMAIN"),
 		BSVNetwork:        getEnvDefault("BSV_NETWORK", "mainnet"),
 		WalletStorageURL:  os.Getenv("WALLET_STORAGE_URL"),
+		ExchangeRateURL:   os.Getenv("EXCHANGE_RATE_URL"),
 		PricePerGBMonth:   getEnvFloat("PRICE_PER_GB_MO", 0.03),
 		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
 		LogLevel:          getEnvDefault("LOG_LEVEL", "info"),

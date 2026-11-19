@@ -244,6 +244,7 @@ The server's own errors are JSON in one shape, for example `{"status":"error","c
 | `HTTP_PORT`           | `8080`           | HTTP listen port                                                                                     |
 | `BSV_NETWORK`         | `mainnet`        | `testnet` selects testnet; any other value selects mainnet                                            |
 | `PRICE_PER_GB_MO`     | `0.03`           | Price in USD per GB (10⁹ bytes) per 30-day month                                                      |
+| `EXCHANGE_RATE_URL`   | WhatsOnChain     | BSV/USD rate endpoint answering like WhatsOnChain's (`{"rate": <USD per BSV>}`); the tests point it at a local stub |
 | `MIN_HOSTING_MINUTES` | `0`              | Shortest retention period an upload or quote may ask for                                             |
 | `PUBLIC_DIR`          | `public`         | Directory holding the `cdn` folder of uploaded files, relative to the working directory              |
 | `SLAP_TRACKERS`       | 4 BSVB trackers  | Comma-separated SLAP trackers used to find `tm_uhrp` overlay hosts                                   |
@@ -276,7 +277,7 @@ On a `localhost` `HOSTING_DOMAIN` the file is stored but not advertised, and `/p
 satoshis = max(10, floor(size_GB × retention_months × PRICE_PER_GB_MO × 10⁸ / BSV_USD))
 ```
 
-`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain; a failed lookup is retried up to three times, and a rate fetched in the last 15 minutes is reused while the API is down. A quote may cover at most 69 million minutes (about 130 years).
+`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain (or `EXCHANGE_RATE_URL`) and is reused for 5 minutes before it is fetched again. A failed lookup is retried up to three times, and while the API is down a rate fetched in the last 15 minutes is still served. A quote may cover at most 69 million minutes (about 130 years).
 
 </details>
 
@@ -453,27 +454,26 @@ go run ./examples/find_file uhrp://<url>
 <summary><strong><code>Jest Integration Tests</code></strong></summary>
 <br/>
 
-The `test-client/` directory holds integration tests that run against a live server with `@bsv/sdk`:
+The `test-client/` directory holds TypeScript tests written with `@bsv/sdk`. They make no network requests: the suite builds the Go server and runs it on a free loopback port, with no wallet and a local stub for its BSV/USD rate, and the overlay lookups run against an in-memory mock overlay. A guard fails any request that would leave the machine. Go must be on your `PATH`.
 
 ```bash
-# Terminal 1: Start the server
-SERVER_PRIVATE_KEY=$(openssl rand -hex 32) HTTP_PORT=8081 HOSTING_DOMAIN=localhost:8081 go run ./cmd/server
-
-# Terminal 2: Run the tests
 cd test-client
 npm ci
-npm run test:integration
+npm run typecheck   # tsc --noEmit (TypeScript 7)
+npm test            # every suite; npm run test:integration runs the server suite alone
 ```
 
-**Always run (11):** quote pricing (valid requests, scaling with size and retention), input validation (missing fields, negative sizes, absurd retention periods), the JSON 404 for unknown routes, and UHRP URL encoding and decoding.
+**Server suite (13):** quote pricing (valid requests, scaling with size and retention, the exact price for the stub rate, and one rate fetch serving later quotes), input validation (missing fields, negative sizes, absurd retention periods), the JSON 404 for unknown routes, and UHRP URL encoding and decoding.
 
-**Auth-gated (5):** upload and PUT with UHRP URL verification, list, find and renew. They need a wallet-enabled server on a public HTTPS origin, because `StorageUploader` refuses any other storage URL:
+**Overlay lookup suite (8):** SLAP discovery, the `ls_uhrp` lookup, the SDK's `LookupResolver` and hash-checked downloads, against a mock overlay whose SLAP and UHRP advertisements are signed like the real ones.
+
+**Auth-gated (5):** upload and PUT with UHRP URL verification, list, find and renew. They need a wallet-enabled server on a public HTTPS origin, because `StorageUploader` refuses any other storage URL. Setting `UHRP_HOST` tests that server instead of starting a local one:
 
 ```bash
 UHRP_AUTH_ENABLED=true UHRP_HOST=https://files.example.com npm run test:integration
 ```
 
-`npm run test:diagnose` walks the public overlay network (SLAP trackers, `ls_uhrp` hosts, downloads) for one UHRP URL (`UHRP_URL`) to show where a lookup breaks.
+`npm run test:diagnose` is the one live command: it walks the public mainnet overlay (SLAP trackers, `ls_uhrp` hosts, downloads) for one UHRP URL (`UHRP_URL`) to show where a lookup breaks.
 
 </details>
 

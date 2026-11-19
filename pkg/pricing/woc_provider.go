@@ -15,7 +15,12 @@ const (
 	// whatsOnChainExchangeRateURL is WhatsOnChain's BSV/USD exchange-rate endpoint.
 	whatsOnChainExchangeRateURL = "https://api.whatsonchain.com/v1/bsv/main/exchangerate"
 
-	whatsOnChainTimeout  = 10 * time.Second
+	whatsOnChainTimeout = 10 * time.Second
+
+	// whatsOnChainRefreshInterval is how long a fetched rate is served without asking the API again.
+	whatsOnChainRefreshInterval = 5 * time.Minute
+
+	// whatsOnChainCacheTTL is the age past which a cached rate is never served, even while the API is down.
 	whatsOnChainCacheTTL = 15 * time.Minute
 
 	// maxExchangeRateResponseBytes bounds how much of a response body is decoded.
@@ -30,23 +35,35 @@ type WhatsOnChainProvider struct {
 	httpClient *http.Client
 	url        string
 
-	mu         sync.RWMutex
-	cachedRate float64
-	cachedAt   time.Time
-	cacheTTL   time.Duration
+	mu              sync.RWMutex
+	cachedRate      float64
+	cachedAt        time.Time
+	refreshInterval time.Duration
+	cacheTTL        time.Duration
 }
 
 // NewWhatsOnChainProvider creates a new oracle instance targeting Whatsonchain APIs.
 func NewWhatsOnChainProvider() *WhatsOnChainProvider {
-	return newWhatsOnChainProvider(whatsOnChainExchangeRateURL, &http.Client{Timeout: whatsOnChainTimeout})
+	return NewWhatsOnChainProviderWithURL("")
+}
+
+// NewWhatsOnChainProviderWithURL creates a provider for any endpoint that answers like WhatsOnChain's
+// exchange-rate API (a JSON object with a "rate" field, in USD per BSV). An empty url selects WhatsOnChain.
+func NewWhatsOnChainProviderWithURL(url string) *WhatsOnChainProvider {
+	if url == "" {
+		url = whatsOnChainExchangeRateURL
+	}
+
+	return newWhatsOnChainProvider(url, &http.Client{Timeout: whatsOnChainTimeout})
 }
 
 // newWhatsOnChainProvider creates a provider for the given endpoint and client (tests point it at a local server).
 func newWhatsOnChainProvider(url string, client *http.Client) *WhatsOnChainProvider {
 	return &WhatsOnChainProvider{
-		httpClient: client,
-		url:        url,
-		cacheTTL:   whatsOnChainCacheTTL,
+		httpClient:      client,
+		url:             url,
+		refreshInterval: whatsOnChainRefreshInterval,
+		cacheTTL:        whatsOnChainCacheTTL,
 	}
 }
 
@@ -56,11 +73,20 @@ type exchangeRateResponse struct {
 }
 
 // GetExchangeRate implements the ExchangeRateProvider interface.
-// Returns cached rate on API failure if a recent rate is available.
+// A rate fetched within the refresh interval is served from the cache. Otherwise the API is asked
+// again, and if it fails, a cached rate younger than the cache TTL is served instead of the error.
 func (o *WhatsOnChainProvider) GetExchangeRate(ctx context.Context) (float64, error) {
+	if rate, ok := o.cached(o.refreshInterval); ok {
+		return rate, nil
+	}
+
 	rate, err := o.fetch(ctx)
 	if err != nil {
-		return o.fallback(err)
+		if cached, ok := o.cached(o.cacheTTL); ok {
+			return cached, nil
+		}
+
+		return 0, err
 	}
 
 	o.mu.Lock()
@@ -97,16 +123,12 @@ func (o *WhatsOnChainProvider) fetch(ctx context.Context) (float64, error) {
 	return validateExchangeRate(data.Rate)
 }
 
-// fallback returns a cached rate if available, otherwise propagates the error.
-func (o *WhatsOnChainProvider) fallback(fetchErr error) (float64, error) {
+// cached returns the cached rate when there is one younger than maxAge.
+func (o *WhatsOnChainProvider) cached(maxAge time.Duration) (float64, bool) {
 	o.mu.RLock()
 	rate := o.cachedRate
 	age := time.Since(o.cachedAt)
 	o.mu.RUnlock()
 
-	if rate > 0 && age < o.cacheTTL {
-		return rate, nil
-	}
-
-	return 0, fetchErr
+	return rate, rate > 0 && age < maxAge
 }
