@@ -454,27 +454,26 @@ go run ./examples/find_file uhrp://<url>
 <summary><strong><code>Jest Integration Tests</code></strong></summary>
 <br/>
 
-The `test-client/` directory holds integration tests that run against a live server with `@bsv/sdk`:
+The `test-client/` directory holds TypeScript tests written with `@bsv/sdk`. They make no network requests: the suite builds the Go server and runs it on a free loopback port, with no wallet and a local stub for its BSV/USD rate, and the overlay lookups run against an in-memory mock overlay. A guard fails any request that would leave the machine. Go must be on your `PATH`.
 
 ```bash
-# Terminal 1: Start the server
-SERVER_PRIVATE_KEY=$(openssl rand -hex 32) HTTP_PORT=8081 HOSTING_DOMAIN=localhost:8081 go run ./cmd/server
-
-# Terminal 2: Run the tests
 cd test-client
 npm ci
-npm run test:integration
+npm run typecheck   # tsc --noEmit (TypeScript 7)
+npm test            # every suite; npm run test:integration runs the server suite alone
 ```
 
-**Always run (11):** quote pricing (valid requests, scaling with size and retention), input validation (missing fields, negative sizes, absurd retention periods), the JSON 404 for unknown routes, and UHRP URL encoding and decoding.
+**Server suite (13):** quote pricing (valid requests, scaling with size and retention, the exact price for the stub rate, and one rate fetch serving later quotes), input validation (missing fields, negative sizes, absurd retention periods), the JSON 404 for unknown routes, and UHRP URL encoding and decoding.
 
-**Auth-gated (5):** upload and PUT with UHRP URL verification, list, find and renew. They need a wallet-enabled server on a public HTTPS origin, because `StorageUploader` refuses any other storage URL:
+**Overlay lookup suite (8):** SLAP discovery, the `ls_uhrp` lookup, the SDK's `LookupResolver` and hash-checked downloads, against a mock overlay whose SLAP and UHRP advertisements are signed like the real ones.
+
+**Auth-gated (5):** upload and PUT with UHRP URL verification, list, find and renew. They need a wallet-enabled server on a public HTTPS origin, because `StorageUploader` refuses any other storage URL. Setting `UHRP_HOST` tests that server instead of starting a local one:
 
 ```bash
 UHRP_AUTH_ENABLED=true UHRP_HOST=https://files.example.com npm run test:integration
 ```
 
-`npm run test:diagnose` walks the public overlay network (SLAP trackers, `ls_uhrp` hosts, downloads) for one UHRP URL (`UHRP_URL`) to show where a lookup breaks.
+`npm run test:diagnose` is the one live command: it walks the public mainnet overlay (SLAP trackers, `ls_uhrp` hosts, downloads) for one UHRP URL (`UHRP_URL`) to show where a lookup breaks.
 
 </details>
 

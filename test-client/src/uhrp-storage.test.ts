@@ -5,15 +5,33 @@
  * Based on: https://fast.brc.dev/?snippet=upload
  * Reference: https://github.com/bsv-blockchain/ts-sdk/blob/master/src/storage/StorageUploader.ts
  *
- * Prerequisites:
- *   1. Start the Go server: cd ../; HTTP_PORT=8081 HOSTING_DOMAIN=localhost:8081 go run ./cmd/server
- *   2. Run tests: npx jest src/uhrp-storage.test.ts
+ * By default the suite builds the Go server and runs it on a free loopback port, with no wallet and
+ * a local stub for its BSV/USD exchange rate, so it needs Go but no network. Set UHRP_HOST to test
+ * a server you started yourself instead.
+ *
+ * Run: npm run test:integration
  */
 
 import { PrivateKey, ProtoWallet, StorageUploader, StorageUtils } from '@bsv/sdk'
 import { createHash } from 'crypto'
 
-const SERVER_URL = process.env.UHRP_HOST || 'http://localhost:8081'
+import { type LocalServer, PRICE_PER_GB_MONTH, STUB_BSV_USD_RATE, startLocalServer } from './support/local-server'
+
+const EXTERNAL_SERVER_URL = process.env.UHRP_HOST
+const localTest = EXTERNAL_SERVER_URL ? test.skip : test
+
+let SERVER_URL = EXTERNAL_SERVER_URL ?? ''
+let localServer: LocalServer | undefined
+
+beforeAll(async () => {
+  if (EXTERNAL_SERVER_URL) return
+  localServer = await startLocalServer()
+  SERVER_URL = localServer.url
+}, 120_000)
+
+afterAll(async () => {
+  await localServer?.stop()
+})
 
 // Create a ProtoWallet for authenticated requests
 const userKey = PrivateKey.fromRandom()
@@ -89,6 +107,29 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
       })
 
       expect(long.quote).toBeGreaterThanOrEqual(short.quote)
+    })
+
+    localTest('should price with the exchange rate from the stub', async () => {
+      const fileSize = 5_000_000_000 // 5 GB
+      const retentionPeriod = 43_200 * 3 // 3 months
+
+      const { status, data } = await postJSON('/quote', { fileSize, retentionPeriod })
+
+      // The server's formula, in the same float64 operations: USD price times satoshis per USD.
+      const usd = (fileSize / 1e9) * (retentionPeriod / 43_200) * PRICE_PER_GB_MONTH
+      const expected = Math.max(10, Math.floor(usd * (1 / (STUB_BSV_USD_RATE / 1e8))))
+
+      expect(status).toBe(200)
+      expect(data.quote).toBe(expected)
+    })
+
+    localTest('should fetch the exchange rate once and serve later quotes from its cache', async () => {
+      for (let i = 0; i < 3; i++) {
+        const { status } = await postJSON('/quote', { fileSize: 1024 * (i + 1), retentionPeriod: 60 })
+        expect(status).toBe(200)
+      }
+
+      expect(localServer?.rateRequests()).toBe(1)
     })
 
     test('should reject missing fileSize', async () => {

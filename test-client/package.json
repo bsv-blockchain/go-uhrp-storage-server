@@ -4,19 +4,21 @@
     "description": "",
     "main": "index.js",
     "scripts": {
-        "test": "jest --verbose --forceExit",
-        "test:integration": "jest --verbose --forceExit src/uhrp-storage.test.ts",
-        "test:diagnose": "jest --verbose src/uhrp-debug.test.ts"
+        "test": "jest --verbose",
+        "test:integration": "jest --verbose src/uhrp-storage.test.ts",
+        "test:diagnose": "UHRP_LIVE=true jest --verbose src/uhrp-debug.test.ts",
+        "typecheck": "tsc --noEmit"
     },
     "keywords": [],
     "author": "",
     "license": "Apache-2.0",
     "devDependencies": {
         "@bsv/sdk": "^4.1.1",
+        "@swc/core": "^1.16.22",
+        "@swc/jest": "^0.2.39",
         "@types/jest": "^30.0.0",
         "@types/node": "^26.6.6",
-        "jest": "^30.2.0",
-        "ts-jest": "^29.4.6",
+        "jest": "^30.5.2",
         "typescript": "^7.0.2"
     },
     "overrides": {
