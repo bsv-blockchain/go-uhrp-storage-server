@@ -20,19 +20,15 @@ func (p staticRateProvider) GetExchangeRate(context.Context) (float64, error) {
 	return float64(p), nil
 }
 
-// flakyRateProvider fails the first failures calls, then returns rate.
-type flakyRateProvider struct {
-	failures int32
-	rate     float64
-	calls    atomic.Int32
+// failingRateProvider always fails, counting its calls.
+type failingRateProvider struct {
+	calls atomic.Int32
 }
 
-func (p *flakyRateProvider) GetExchangeRate(context.Context) (float64, error) {
-	if p.calls.Add(1) <= p.failures {
-		return 0, errRateUnavailable
-	}
+func (p *failingRateProvider) GetExchangeRate(context.Context) (float64, error) {
+	p.calls.Add(1)
 
-	return p.rate, nil
+	return 0, errRateUnavailable
 }
 
 func TestCalculatorGetPrice(t *testing.T) {
@@ -60,32 +56,12 @@ func TestCalculatorGetPrice(t *testing.T) {
 	}
 }
 
-func TestCalculatorGetPriceRetriesTransientFailures(t *testing.T) {
-	provider := &flakyRateProvider{failures: exchangeRateAttempts - 1, rate: 30}
-
-	got, err := NewCalculator(0.03, provider).GetPrice(t.Context(), 1_000_000_000, 43_200)
-	require.NoError(t, err)
-	assert.Equal(t, int64(100_000), got)
-	assert.Equal(t, int32(exchangeRateAttempts), provider.calls.Load())
-}
-
-func TestCalculatorGetPriceGivesUpAfterMaxAttempts(t *testing.T) {
-	provider := &flakyRateProvider{failures: math.MaxInt32}
+func TestCalculatorGetPriceReturnsProviderError(t *testing.T) {
+	provider := &failingRateProvider{}
 
 	_, err := NewCalculator(0.03, provider).GetPrice(t.Context(), 1, 1)
 	require.ErrorIs(t, err, errRateUnavailable)
-	assert.Equal(t, int32(exchangeRateAttempts), provider.calls.Load())
-}
-
-func TestCalculatorGetPriceStopsWhenContextIsCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	provider := &flakyRateProvider{failures: math.MaxInt32}
-
-	_, err := NewCalculator(0.03, provider).GetPrice(ctx, 1, 1)
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Equal(t, int32(1), provider.calls.Load(), "no retry after cancellation")
+	assert.Equal(t, int32(1), provider.calls.Load(), "retrying a failed lookup is the provider's job")
 }
 
 func TestCalculatorGetPriceRejectsInvalidRates(t *testing.T) {

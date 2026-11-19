@@ -8,6 +8,7 @@ require (
 	github.com/bsv-blockchain/go-wallet-toolbox v0.192.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/joho/godotenv v1.6.0-pre.4
+	github.com/mrz1836/go-whatsonchain v1.3.1
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/http-swagger v1.3.4
 	github.com/swaggo/swag v1.16.6
@@ -48,7 +49,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-sqlite3 v1.14.53 // indirect
-	github.com/mrz1836/go-whatsonchain v1.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/swaggo/files v1.0.1 // indirect
 	go.opencensus.io v0.24.0 // indirect

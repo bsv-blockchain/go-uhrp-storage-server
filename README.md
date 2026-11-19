@@ -127,6 +127,7 @@
 | `@bsv/wallet-toolbox`             | `github.com/bsv-blockchain/go-wallet-toolbox`                   |
 | Express.js                        | `github.com/go-chi/chi/v5`                                      |
 | `dotenv`                          | `github.com/joho/godotenv`                                      |
+| `axios` (WhatsOnChain rate)       | `github.com/mrz1836/go-whatsonchain`                            |
 
 ### Differences from the Original
 1. **Storage**: Local filesystem (`PUBLIC_DIR/cdn`) instead of Google Cloud Storage
@@ -236,20 +237,21 @@ The server's own errors are JSON in one shape, for example `{"status":"error","c
 <summary><strong><code>Configuration Reference</code></strong></summary>
 <br/>
 
-| Variable              | Default          | Description                                                                                          |
-|-----------------------|------------------|------------------------------------------------------------------------------------------------------|
-| `SERVER_PRIVATE_KEY`  | unset            | Hex-encoded private key for the server identity; required for the wallet                             |
-| `WALLET_STORAGE_URL`  | unset            | Remote wallet storage server for the server wallet; required for the wallet                          |
-| `HOSTING_DOMAIN`      | unset            | Public host (and port) clients upload to and download from, e.g. `files.example.com`; required for uploads. `localhost…` URLs use `http://` and skip advertising |
-| `HTTP_PORT`           | `8080`           | HTTP listen port                                                                                     |
-| `BSV_NETWORK`         | `mainnet`        | `testnet` selects testnet; any other value selects mainnet                                            |
-| `PRICE_PER_GB_MO`     | `0.03`           | Price in USD per GB (10⁹ bytes) per 30-day month                                                      |
-| `EXCHANGE_RATE_URL`   | WhatsOnChain     | BSV/USD rate endpoint answering like WhatsOnChain's (`{"rate": <USD per BSV>}`); the tests point it at a local stub |
-| `MIN_HOSTING_MINUTES` | `0`              | Shortest retention period an upload or quote may ask for                                             |
-| `PUBLIC_DIR`          | `public`         | Directory holding the `cdn` folder of uploaded files, relative to the working directory              |
-| `SLAP_TRACKERS`       | 4 BSVB trackers  | Comma-separated SLAP trackers used to find `tm_uhrp` overlay hosts                                   |
-| `LOG_LEVEL`           | `info`           | `debug`, `info`, `warn` or `error`                                                                   |
-| `LOG_FORMAT`          | `json`           | `json` or `text`                                                                                     |
+| Variable                 | Default         | Description                                                                                            |
+|--------------------------|-----------------|--------------------------------------------------------------------------------------------------------|
+| `SERVER_PRIVATE_KEY`     | unset           | Hex-encoded private key for the server identity; required for the wallet                               |
+| `WALLET_STORAGE_URL`     | unset           | Remote wallet storage server for the server wallet; required for the wallet                            |
+| `HOSTING_DOMAIN`         | unset           | Public host (and port) clients upload to and download from, e.g. `files.example.com`; required for uploads. `localhost…` URLs use `http://` and skip advertising |
+| `HTTP_PORT`              | `8080`          | HTTP listen port                                                                                       |
+| `BSV_NETWORK`            | `mainnet`       | `testnet` selects testnet; any other value selects mainnet                                             |
+| `PRICE_PER_GB_MO`        | `0.03`          | Price in USD per GB (10⁹ bytes) per 30-day month                                                       |
+| `WHATS_ON_CHAIN_API_KEY` | unset           | WhatsOnChain API key for the BSV/USD rate lookup; authenticated requests get higher rate limits        |
+| `WHATS_ON_CHAIN_API_URL` | WhatsOnChain    | Base URL of a WhatsOnChain-compatible API, default `https://api.whatsonchain.com/v1/` (the rate is read from `<url>bsv/main/exchangerate`); the tests point it at a local stub |
+| `MIN_HOSTING_MINUTES`    | `0`             | Shortest retention period an upload or quote may ask for                                               |
+| `PUBLIC_DIR`             | `public`        | Directory holding the `cdn` folder of uploaded files, relative to the working directory                |
+| `SLAP_TRACKERS`          | 4 BSVB trackers | Comma-separated SLAP trackers used to find `tm_uhrp` overlay hosts                                     |
+| `LOG_LEVEL`              | `info`          | `debug`, `info`, `warn` or `error`                                                                     |
+| `LOG_FORMAT`             | `json`          | `json` or `text`                                                                                       |
 
 The default trackers are `overlay-us-1`, `overlay-eu-1` and `overlay-ap-1` at `bsvb.tech`, and `users.bapp.dev`.
 
@@ -277,7 +279,7 @@ On a `localhost` `HOSTING_DOMAIN` the file is stored but not advertised, and `/p
 satoshis = max(10, floor(size_GB × retention_months × PRICE_PER_GB_MO × 10⁸ / BSV_USD))
 ```
 
-`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain (or `EXCHANGE_RATE_URL`) and is reused for 5 minutes before it is fetched again. A failed lookup is retried up to three times, and while the API is down a rate fetched in the last 15 minutes is still served. A quote may cover at most 69 million minutes (about 130 years).
+`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain through [go-whatsonchain](https://github.com/mrz1836/go-whatsonchain) and is reused for 5 minutes before it is fetched again. A failed request (a network error, a 429 or a 5xx) is retried twice with exponential backoff, and while the API is down a rate fetched in the last 15 minutes is still served. A quote may cover at most 69 million minutes (about 130 years).
 
 </details>
 

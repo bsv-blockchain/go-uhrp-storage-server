@@ -10,6 +10,7 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/joho/godotenv"
+	"github.com/mrz1836/go-whatsonchain"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/config"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/logger"
@@ -61,11 +62,21 @@ func run(ctx context.Context) error {
 
 	slog.Info("Serving uploaded files", "cdnDir", store.CDNPath())
 
-	if cfg.ExchangeRateURL != "" {
-		slog.Info("Using a custom BSV/USD exchange rate endpoint", "url", cfg.ExchangeRateURL)
+	if cfg.WhatsOnChainAPIURL != "" {
+		slog.Info("Using a custom WhatsOnChain API URL for the BSV/USD exchange rate", "url", cfg.WhatsOnChainAPIURL)
 	}
 
-	calc := pricing.NewCalculator(cfg.PricePerGBMonth, pricing.NewWhatsOnChainProviderWithURL(cfg.ExchangeRateURL))
+	// An empty key or URL leaves the go-whatsonchain default (the key is then read from
+	// WHATS_ON_CHAIN_API_KEY by the library itself).
+	rates, err := pricing.NewWhatsOnChainProvider(ctx,
+		whatsonchain.WithAPIKey(cfg.WhatsOnChainAPIKey),
+		whatsonchain.WithBaseURL(cfg.WhatsOnChainAPIURL),
+	)
+	if err != nil {
+		return fmt.Errorf("create exchange rate provider: %w", err)
+	}
+
+	calc := pricing.NewCalculator(cfg.PricePerGBMonth, rates)
 	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork, cfg.SLAPTrackers, baseLogger)
 
 	initWallet(ctx, cfg, wp)

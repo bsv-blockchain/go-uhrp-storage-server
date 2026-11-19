@@ -9,18 +9,19 @@ import (
 
 // Config holds all server configuration.
 type Config struct {
-	ServerPrivateKey  string
-	HTTPPort          string
-	HostingDomain     string
-	BSVNetwork        string
-	WalletStorageURL  string
-	ExchangeRateURL   string
-	PricePerGBMonth   float64
-	MinHostingMinutes int
-	LogLevel          string
-	LogFormat         string
-	PublicDir         string
-	SLAPTrackers      []string
+	ServerPrivateKey   string
+	HTTPPort           string
+	HostingDomain      string
+	BSVNetwork         string
+	WalletStorageURL   string
+	WhatsOnChainAPIKey string
+	WhatsOnChainAPIURL string
+	PricePerGBMonth    float64
+	MinHostingMinutes  int
+	LogLevel           string
+	LogFormat          string
+	PublicDir          string
+	SLAPTrackers       []string
 }
 
 // defaultSLAPTrackers returns the SLAP trackers used to find UHRP overlay hosts when SLAP_TRACKERS is unset.
@@ -36,18 +37,19 @@ func defaultSLAPTrackers() []string {
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ServerPrivateKey:  os.Getenv("SERVER_PRIVATE_KEY"),
-		HTTPPort:          getEnvDefault("HTTP_PORT", "8080"),
-		HostingDomain:     os.Getenv("HOSTING_DOMAIN"),
-		BSVNetwork:        getEnvDefault("BSV_NETWORK", "mainnet"),
-		WalletStorageURL:  os.Getenv("WALLET_STORAGE_URL"),
-		ExchangeRateURL:   os.Getenv("EXCHANGE_RATE_URL"),
-		PricePerGBMonth:   getEnvFloat("PRICE_PER_GB_MO", 0.03),
-		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
-		LogLevel:          getEnvDefault("LOG_LEVEL", "info"),
-		LogFormat:         getEnvDefault("LOG_FORMAT", "json"),
-		PublicDir:         getEnvDefault("PUBLIC_DIR", "public"),
-		SLAPTrackers:      getEnvStringSlice("SLAP_TRACKERS", defaultSLAPTrackers()),
+		ServerPrivateKey:   os.Getenv("SERVER_PRIVATE_KEY"),
+		HTTPPort:           getEnvDefault("HTTP_PORT", "8080"),
+		HostingDomain:      os.Getenv("HOSTING_DOMAIN"),
+		BSVNetwork:         getEnvDefault("BSV_NETWORK", "mainnet"),
+		WalletStorageURL:   os.Getenv("WALLET_STORAGE_URL"),
+		WhatsOnChainAPIKey: os.Getenv("WHATS_ON_CHAIN_API_KEY"),
+		WhatsOnChainAPIURL: os.Getenv("WHATS_ON_CHAIN_API_URL"),
+		PricePerGBMonth:    getEnvFloat("PRICE_PER_GB_MO", 0.03),
+		MinHostingMinutes:  getEnvInt("MIN_HOSTING_MINUTES", 0),
+		LogLevel:           getEnvDefault("LOG_LEVEL", "info"),
+		LogFormat:          getEnvDefault("LOG_FORMAT", "json"),
+		PublicDir:          getEnvDefault("PUBLIC_DIR", "public"),
+		SLAPTrackers:       getEnvStringSlice("SLAP_TRACKERS", defaultSLAPTrackers()),
 	}
 
 	return cfg, nil
