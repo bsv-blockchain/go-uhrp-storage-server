@@ -9,7 +9,8 @@ services:
       - LOG_LEVEL=debug
       - LOG_FORMAT=text
     volumes:
-      - storage-data:/app/data
+      # Uploaded files are written to public/cdn; keep them across container restarts
+      - storage-data:/app/public/cdn
     restart: unless-stopped
 
 volumes:

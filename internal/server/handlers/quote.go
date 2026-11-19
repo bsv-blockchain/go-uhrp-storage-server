@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"log/slog"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
@@ -63,18 +63,22 @@ func (h *QuoteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if retentionPeriod < int64(h.MinHostingMinutes) {
 		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_RETENTION_PERIOD",
 			fmt.Sprintf("The retention period must be an integer and must be more than %d minutes", h.MinHostingMinutes))
+
 		return
 	}
 
-	if retentionPeriod > 69_000_000 {
+	if retentionPeriod > maxRetentionMinutes {
 		responses.WriteError(w, http.StatusBadRequest, "ERR_INVALID_RETENTION_PERIOD",
 			"The retention period must be less than 69 million minutes (about 130 years)")
+
 		return
 	}
 
-	satPrice, err := h.Calculator.GetPrice(fileSize, retentionPeriod)
+	satPrice, err := h.Calculator.GetPrice(r.Context(), fileSize, retentionPeriod)
 	if err != nil {
+		h.Logger.ErrorContext(r.Context(), "Failed to calculate quote", "error", err)
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "An internal error has occurred.")
+
 		return
 	}
 

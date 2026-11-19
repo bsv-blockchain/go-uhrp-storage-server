@@ -18,6 +18,36 @@ import (
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
 )
 
+const (
+	// WalletName is the originator name the server uses for its own wallet calls.
+	WalletName = "uhrp-server"
+
+	// BasketName is the wallet basket holding the server's advertisement outputs.
+	BasketName = "uhrp advertisements"
+
+	// BaseAdvertisementLabel labels every advertisement action.
+	BaseAdvertisementLabel = "uhrp-advertisement"
+
+	// RenewalLabel additionally labels advertisement renewals.
+	RenewalLabel = "uhrp-renewal"
+
+	// ProtocolID is the wallet protocol name used for advertisement PushDrop keys.
+	ProtocolID = "uhrp advertisement"
+
+	// uhrpTopic is the overlay topic advertisements are broadcast to.
+	uhrpTopic = "tm_uhrp"
+
+	// pushDropUnlockingScriptLength is the estimated size of a PushDrop unlocking script (signature only).
+	pushDropUnlockingScriptLength = 74
+
+	// pushDropFieldCount is the number of data fields in an advertisement PushDrop script:
+	// host identity key, content hash, URL, expiry and content length.
+	pushDropFieldCount = 5
+
+	// pushDropExpiryField is the index of the expiry field within the PushDrop fields.
+	pushDropExpiryField = 3
+)
+
 // loggingLookupFacilitator wraps HTTPSOverlayLookupFacilitator and adds DEBUG logging.
 type loggingLookupFacilitator struct {
 	inner  *lookup.HTTPSOverlayLookupFacilitator
@@ -26,12 +56,14 @@ type loggingLookupFacilitator struct {
 
 func (f *loggingLookupFacilitator) Lookup(ctx context.Context, url string, question *lookup.LookupQuestion) (*lookup.LookupAnswer, error) {
 	f.logger.Debug("Lookup query", "url", url, "service", question.Service)
+
 	answer, err := f.inner.Lookup(ctx, url, question)
 	if err != nil {
 		f.logger.Debug("Lookup failed", "url", url, "service", question.Service, "error", err)
 	} else {
 		f.logger.Debug("Lookup success", "url", url, "service", question.Service, "type", answer.Type, "outputs", len(answer.Outputs))
 	}
+
 	return answer, err
 }
 
@@ -43,26 +75,23 @@ type loggingBroadcastFacilitator struct {
 
 func (f *loggingBroadcastFacilitator) Send(url string, taggedBEEF *overlay.TaggedBEEF) (*overlay.Steak, error) {
 	f.logger.Debug("Sending to overlay host", "url", url, "topics", taggedBEEF.Topics)
+
 	steak, err := f.inner.Send(url, taggedBEEF)
 	if err != nil {
 		f.logger.Debug("Overlay send failed", "url", url, "error", err)
 	} else {
 		f.logger.Debug("Overlay send success", "url", url, "steak", steak)
 	}
+
 	return steak, err
 }
 
-const (
-	WalletName             = "uhrp-server"
-	BasketName             = "uhrp advertisements"
-	BaseAdvertisementLabel = "uhrp-advertisement"
-	RenewalLabel           = "uhrp-renewal"
-	ProtocolID             = "uhrp advertisement"
-)
-
-var Protocol = sdkWallet.Protocol{
-	SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
-	Protocol:      ProtocolID,
+// advertisementProtocol is the wallet protocol used for advertisement PushDrop keys.
+func advertisementProtocol() sdkWallet.Protocol {
+	return sdkWallet.Protocol{
+		SecurityLevel: sdkWallet.SecurityLevelEveryAppAndCounterparty,
+		Protocol:      ProtocolID,
+	}
 }
 
 // CreateAdParams holds the arguments needed to create a new UHRP advertisement Action.
@@ -80,8 +109,9 @@ type CreateAdParams struct {
 func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Network, p CreateAdParams) error {
 	wallet := wp.GetWallet()
 	if wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+		return ErrWalletNotInitialized
 	}
+
 	lockingScript, err := wp.buildPushDropScript(ctx, p)
 	if err != nil {
 		return fmt.Errorf("failed to build advertisement script: %w", err)
@@ -100,15 +130,7 @@ func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Net
 				Satoshis:          1,
 				OutputDescription: "UHRP advertisement token",
 				Basket:            BasketName,
-				Tags: []string{
-					fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(uhrpURL))),
-					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
-					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
-					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
-					"name_file",
-					fmt.Sprintf("content_type_%s", p.ContentType),
-					fmt.Sprintf("size_%d", p.ContentLength),
-				},
+				Tags:              advertisementTags(uhrpURL, p),
 			},
 		},
 		Labels: []string{BaseAdvertisementLabel},
@@ -120,8 +142,7 @@ func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Net
 		return fmt.Errorf("failed to broadcast advertisement: %w", err)
 	}
 
-	err = wp.overlayBroadcast(result.Tx, network, wp.slapTrackers)
-	if err != nil {
+	if err = wp.overlayBroadcast(result.Tx, network, wp.slapTrackers); err != nil {
 		return err
 	}
 
@@ -135,13 +156,16 @@ func (wp *Provider) CreateAdvertisement(ctx context.Context, network overlay.Net
 }
 
 // RenewAdvertisement consumes an existing advertisement output and creates a new one with the updated script.
-func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Network, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams) error {
+func (wp *Provider) RenewAdvertisement(
+	ctx context.Context, network overlay.Network, matchedOutput *sdkWallet.Output, beef []byte, p CreateAdParams,
+) error {
 	wallet := wp.GetWallet()
 	if wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+		return ErrWalletNotInitialized
 	}
+
 	if matchedOutput == nil {
-		return fmt.Errorf("no matched output found")
+		return ErrNoMatchedOutput
 	}
 
 	lockingScript, err := wp.decodeAndBuildPushDropLockingScript(ctx, matchedOutput, p)
@@ -151,12 +175,12 @@ func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Netw
 
 	aResult, err := wallet.CreateAction(ctx, sdkWallet.CreateActionArgs{
 		InputBEEF:   beef,
-		Description: fmt.Sprintf("Renew UHRP advertisement for %s", p.URL),
+		Description: "Renew UHRP advertisement for " + p.URL,
 		Inputs: []sdkWallet.CreateActionInput{
 			{
 				Outpoint:              matchedOutput.Outpoint,
 				InputDescription:      "Redeem previous UHRP advertisement",
-				UnlockingScriptLength: 74,
+				UnlockingScriptLength: pushDropUnlockingScriptLength,
 			},
 		},
 		Outputs: []sdkWallet.CreateActionOutput{
@@ -165,15 +189,7 @@ func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Netw
 				Satoshis:          1,
 				OutputDescription: "UHRP advertisement token (renewed)",
 				Basket:            BasketName,
-				Tags: []string{
-					fmt.Sprintf("uhrp_url_%s", hex.EncodeToString([]byte(p.URL))),
-					fmt.Sprintf("object_identifier_%s", hex.EncodeToString([]byte(p.ObjectID))),
-					fmt.Sprintf("uploader_identity_key_%s", p.Uploader),
-					fmt.Sprintf("expiry_time_%d", p.ExpirySecs),
-					"name_file",
-					fmt.Sprintf("content_type_%s", p.ContentType),
-					fmt.Sprintf("size_%d", p.ContentLength),
-				},
+				Tags:              advertisementTags(p.URL, p),
 			},
 		},
 		Labels: []string{BaseAdvertisementLabel, RenewalLabel},
@@ -206,8 +222,7 @@ func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Netw
 		return fmt.Errorf("error occurred while handling the renewal: %w", err)
 	}
 
-	err = wp.overlayBroadcast(sResult.Tx, network, wp.slapTrackers)
-	if err != nil {
+	if err = wp.overlayBroadcast(sResult.Tx, network, wp.slapTrackers); err != nil {
 		return err
 	}
 
@@ -220,12 +235,32 @@ func (wp *Provider) RenewAdvertisement(ctx context.Context, network overlay.Netw
 	return nil
 }
 
+// advertisementTags returns the wallet tags that index an advertisement output; metadataFromTags reads them back.
+func advertisementTags(uhrpURL string, p CreateAdParams) []string {
+	return []string{
+		tagUhrpURL + hex.EncodeToString([]byte(uhrpURL)),
+		tagObjectIdentifier + hex.EncodeToString([]byte(p.ObjectID)),
+		tagUploaderIdentityKey + p.Uploader,
+		fmt.Sprintf("%s%d", tagExpiryTime, p.ExpirySecs),
+		tagName + "file",
+		tagContentType + p.ContentType,
+		fmt.Sprintf("%s%d", tagSize, p.ContentLength),
+	}
+}
+
 // buildPushDropScript builds a PushDrop-compatible locking script using the go-sdk template.
 func (wp *Provider) buildPushDropScript(ctx context.Context, p CreateAdParams) (*script.Script, error) {
-	wallet := wp.GetWallet()
-	pd := &pushdrop.PushDrop{
-		Wallet: wallet,
+	expiry, err := varIntField(p.ExpirySecs)
+	if err != nil {
+		return nil, fmt.Errorf("expiry: %w", err)
 	}
+
+	contentLength, err := varIntField(p.ContentLength)
+	if err != nil {
+		return nil, fmt.Errorf("content length: %w", err)
+	}
+
+	wallet := wp.GetWallet()
 
 	pubKey, err := wallet.GetPublicKey(ctx, sdkWallet.GetPublicKeyArgs{IdentityKey: true}, WalletName)
 	if err != nil {
@@ -236,44 +271,28 @@ func (wp *Provider) buildPushDropScript(ctx context.Context, p CreateAdParams) (
 		pubKey.PublicKey.Compressed(),
 		p.Hash,
 		[]byte(p.URL),
-		util.VarInt(uint64(p.ExpirySecs)).Bytes(),
-		util.VarInt(uint64(p.ContentLength)).Bytes(),
+		expiry,
+		contentLength,
 	}
 
-	lockScript, err := pd.Lock(
-		ctx,
-		fields,
-		Protocol,
-		AnyonesKeyID,
-		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
-		true,
-		true,
-		pushdrop.LockBefore,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return lockScript, nil
+	return lockAdvertisement(ctx, wallet, fields)
 }
 
-func (wp *Provider) buildPushDropUnlockingScript(ctx context.Context, matchedOutput *sdkWallet.Output, result *sdkWallet.CreateActionResult) (*script.Script, uint32, error) {
-	wallet := wp.GetWallet()
+func (wp *Provider) buildPushDropUnlockingScript(
+	ctx context.Context, matchedOutput *sdkWallet.Output, result *sdkWallet.CreateActionResult,
+) (*script.Script, uint32, error) {
 	pd := &pushdrop.PushDrop{
-		Wallet: wallet,
+		Wallet: wp.GetWallet(),
 	}
-
-	lockingScript := script.NewFromBytes(matchedOutput.LockingScript)
 
 	opts := pushdrop.UnlockOptions{
 		SourceSatoshis: &matchedOutput.Satoshis,
-		LockingScript:  lockingScript,
+		LockingScript:  script.NewFromBytes(matchedOutput.LockingScript),
 	}
 
 	unlocker := pd.Unlock(
 		ctx,
-		Protocol,
+		advertisementProtocol(),
 		AnyonesKeyID,
 		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
 		sdkWallet.SignOutputsAll,
@@ -288,20 +307,12 @@ func (wp *Provider) buildPushDropUnlockingScript(ctx context.Context, matchedOut
 
 	tx := txBeef.FindTransactionForSigningByHash(txHash)
 	if tx == nil {
-		return nil, 0, fmt.Errorf("transaction not found in BEEF")
+		return nil, 0, ErrTransactionNotInBEEF
 	}
 
-	inputIndex := -1
-	for i, input := range tx.Inputs {
-		outpointStr := fmt.Sprintf("%s.%d", input.SourceTXID.String(), input.SourceTxOutIndex)
-		if outpointStr == matchedOutput.Outpoint.String() {
-			inputIndex = i
-			break
-		}
-	}
-
-	if inputIndex == -1 {
-		return nil, 0, fmt.Errorf("could not find input matching outpoint %s in signable transaction", matchedOutput.Outpoint.String())
+	inputIndex, err := findInputIndex(tx, matchedOutput.Outpoint)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	tx.Inputs[inputIndex].SetSourceTxOutput(&transaction.TransactionOutput{
@@ -309,52 +320,81 @@ func (wp *Provider) buildPushDropUnlockingScript(ctx context.Context, matchedOut
 		LockingScript: script.NewFromBytes(matchedOutput.LockingScript),
 	})
 
-	unlockingScript, err := unlocker.Sign(tx, inputIndex)
+	unlockingScript, err := unlocker.Sign(tx, int(inputIndex))
 	if err != nil {
 		return nil, 0, fmt.Errorf("error unlocking funding input: %w", err)
 	}
 
-	return unlockingScript, uint32(inputIndex), nil
+	return unlockingScript, inputIndex, nil
 }
 
-func (wp *Provider) decodeAndBuildPushDropLockingScript(ctx context.Context, matchedOutput *sdkWallet.Output, p CreateAdParams) (*script.Script, error) {
-	wallet := wp.GetWallet()
+// findInputIndex returns the index of the input in tx that spends outpoint.
+func findInputIndex(tx *transaction.Transaction, outpoint transaction.Outpoint) (uint32, error) {
+	want := outpoint.String()
+
+	for i, input := range tx.Inputs {
+		if fmt.Sprintf("%s.%d", input.SourceTXID.String(), input.SourceTxOutIndex) == want {
+			return uint32(i), nil
+		}
+	}
+
+	return 0, fmt.Errorf("%w: %s", ErrInputNotFound, want)
+}
+
+func (wp *Provider) decodeAndBuildPushDropLockingScript(
+	ctx context.Context, matchedOutput *sdkWallet.Output, p CreateAdParams,
+) (*script.Script, error) {
+	prevLockingScript := pushdrop.Decode((*script.Script)(&matchedOutput.LockingScript))
+	if prevLockingScript == nil || len(prevLockingScript.Fields) < pushDropFieldCount {
+		return nil, ErrInvalidPushDropScript
+	}
+
+	expiry, err := varIntField(p.ExpirySecs)
+	if err != nil {
+		return nil, fmt.Errorf("expiry: %w", err)
+	}
+
+	// Keep the host key, hash, URL and content length; only the expiry changes on renewal.
+	fields := make([][]byte, pushDropFieldCount)
+	copy(fields, prevLockingScript.Fields[:pushDropFieldCount])
+	fields[pushDropExpiryField] = expiry
+
+	return lockAdvertisement(ctx, wp.GetWallet(), fields)
+}
+
+// lockAdvertisement builds the advertisement PushDrop locking script for fields, locked to "anyone".
+func lockAdvertisement(ctx context.Context, wallet sdkWallet.Interface, fields [][]byte) (*script.Script, error) {
 	pd := &pushdrop.PushDrop{
 		Wallet: wallet,
 	}
 
-	prevLockingScript := pushdrop.Decode((*script.Script)(&matchedOutput.LockingScript))
-	if prevLockingScript == nil || len(prevLockingScript.Fields) < 5 {
-		return nil, fmt.Errorf("invalid or missing pushdrop locking script")
-	}
-
-	fields := [][]byte{
-		prevLockingScript.Fields[0],
-		prevLockingScript.Fields[1],
-		prevLockingScript.Fields[2],
-		util.VarInt(uint64(p.ExpirySecs)).Bytes(),
-		prevLockingScript.Fields[4],
-	}
-
-	lockScript, err := pd.Lock(
+	return pd.Lock(
 		ctx,
 		fields,
-		Protocol,
+		advertisementProtocol(),
 		AnyonesKeyID,
 		sdkWallet.Counterparty{Type: sdkWallet.CounterpartyTypeAnyone},
 		true,
 		true,
 		pushdrop.LockBefore,
 	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return lockScript, nil
-
 }
 
+// varIntField encodes a non-negative value as a VarInt PushDrop field.
+func varIntField(v int64) ([]byte, error) {
+	if v < 0 {
+		return nil, fmt.Errorf("%w: %d", ErrNegativeValue, v)
+	}
+
+	return util.VarInt(uint64(v)).Bytes(), nil
+}
+
+// overlayBroadcast submits a signed advertisement to the UHRP overlay topic.
+//
+// Admission is best effort: by the time it runs the file is stored and the wallet has
+// already accepted the transaction, so a host that refuses the advertisement is logged
+// rather than failing the request. Only a transaction that cannot be parsed or a
+// broadcaster that cannot be built is returned as an error.
 func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTrackers []string) error {
 	resolver := lookup.NewLookupResolver(&lookup.LookupResolver{
 		NetworkPreset: network,
@@ -364,7 +404,8 @@ func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTra
 			logger: wp.Logger,
 		},
 	})
-	broadcaster, err := topic.NewBroadcaster([]string{"tm_uhrp"}, &topic.BroadcasterConfig{
+
+	broadcaster, err := topic.NewBroadcaster([]string{uhrpTopic}, &topic.BroadcasterConfig{
 		NetworkPreset: network,
 		Resolver:      resolver,
 		Facilitator: &loggingBroadcastFacilitator{
@@ -383,18 +424,16 @@ func (wp *Provider) overlayBroadcast(tx []byte, network overlay.Network, slapTra
 
 	newTx := newBeef.FindAtomicTransactionByHash(newTxHash)
 	wp.Logger.Debug("Parsed signed transaction from BEEF", "version", newTx.Version, "inputs", len(newTx.Inputs), "outputs", len(newTx.Outputs))
+	wp.Logger.Debug("Broadcasting to overlay network", "topic", uhrpTopic, "slapTrackers", slapTrackers)
 
-	wp.Logger.Debug("Broadcasting to overlay network", "topic", "tm_uhrp", "slapTrackers", slapTrackers)
-	success, failure := broadcaster.Broadcast(newTx)
-	if failure != nil {
+	if success, failure := broadcaster.Broadcast(newTx); failure != nil {
 		wp.Logger.Warn("Overlay broadcast failed — file stored but not yet advertised on UHRP network",
 			"code", failure.Code,
 			"description", failure.Description,
 		)
-		return nil
+	} else {
+		wp.Logger.Debug("Overlay broadcast response", "txid", success.Txid, "message", success.Message)
 	}
-
-	wp.Logger.Debug("Overlay broadcast response", "txid", success.Txid, "message", success.Message)
 
 	return nil
 }

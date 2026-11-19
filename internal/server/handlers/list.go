@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -16,16 +15,12 @@ type ListHandler struct {
 	Logger         *slog.Logger
 }
 
-type listReqBody struct {
-	Limit  *uint32 `json:"limit"`
-	Offset *uint32 `json:"offset"`
-}
-
 type listUpload struct {
 	UhrpURL    string `json:"uhrpUrl"`
 	ExpiryTime int64  `json:"expiryTime"`
 }
 
+// ListResponse is the body returned by GET /list.
 type ListResponse struct {
 	Status  string       `json:"status"`
 	Uploads []listUpload `json:"uploads"`
@@ -41,6 +36,7 @@ type ListResponse struct {
 // @Success 200 {object} ListResponse
 // @Failure 401 {object} responses.ErrorResponse
 // @Failure 500 {object} responses.ErrorResponse
+// @Security AuthfetchIdentity
 // @Router /list [get]
 func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	identityKey := middlewares.GetIdentityKey(r.Context())
@@ -49,26 +45,17 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var limit, offset uint32
-	if r.Body != nil {
-		var req listReqBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-			if req.Limit != nil {
-				limit = *req.Limit
-			}
-			if req.Offset != nil {
-				offset = *req.Offset
-			}
-		}
-	}
+	limit, offset := decodePagination(r)
 
 	metadatas, err := h.WalletProvider.ListAdvertisementsByUploader(r.Context(), identityKey.ToDERHex(), limit, offset)
 	if err != nil {
+		h.Logger.ErrorContext(r.Context(), "Failed to list advertisements", "error", err)
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_LIST", "Failed to list outputs.")
+
 		return
 	}
 
-	uploads := make([]listUpload, 0)
+	uploads := make([]listUpload, 0, len(metadatas))
 	for _, meta := range metadatas {
 		uploads = append(uploads, listUpload{
 			UhrpURL:    meta.URL,

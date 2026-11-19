@@ -1,12 +1,24 @@
+// Package uhrp provides helpers for UHRP (Universal Hash Resolution Protocol) URLs.
+//
+// A UHRP URL is the Base58Check encoding of a file's SHA-256 hash with the two-byte
+// prefix 0xce00, exactly as StorageUtils.getURLForHash produces it in @bsv/sdk. These
+// helpers delegate to go-sdk's storage package, so the URLs match the ones the server
+// advertises on the overlay network.
 package uhrp
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
+
+	"github.com/bsv-blockchain/go-sdk/storage"
 )
 
-const uhrpPrefix = "uhrp://"
+// ErrInvalidURL is returned (wrapping the underlying cause) when a string is not a valid UHRP URL.
+//
+// go-sdk does not yet return a sentinel for every failure, so this package wraps them all
+// in one: https://github.com/bsv-blockchain/go-sdk/issues/439
+var ErrInvalidURL = errors.New("invalid UHRP URL")
 
 // HashData computes SHA-256 of the given data and returns the hash bytes.
 func HashData(data []byte) []byte {
@@ -14,17 +26,25 @@ func HashData(data []byte) []byte {
 	return h[:]
 }
 
-// GetURLForHash converts a SHA-256 hash to a UHRP URL.
-// The reference implementation uses StorageUtils.getURLForHash from @bsv/sdk.
+// GetURLForHash converts a 32-byte SHA-256 hash to a UHRP URL (Base58Check, no scheme prefix).
+// It returns an empty string when hash is not 32 bytes long.
 func GetURLForHash(hash []byte) string {
-	return uhrpPrefix + hex.EncodeToString(hash)
+	url, err := storage.GetURLForHash(hash)
+	if err != nil {
+		return ""
+	}
+
+	return url
 }
 
-// GetHashFromURL extracts the hash bytes from a UHRP URL.
+// GetHashFromURL extracts the SHA-256 hash from a UHRP URL. The URL may be bare or carry a
+// uhrp:// or web+uhrp:// prefix. Any failure (bad prefix, length, encoding or checksum)
+// is returned wrapped in ErrInvalidURL.
 func GetHashFromURL(uhrpURL string) ([]byte, error) {
-	if len(uhrpURL) <= len(uhrpPrefix) {
-		return nil, fmt.Errorf("invalid UHRP URL: %s", uhrpURL)
+	hash, err := storage.GetHashFromURL(uhrpURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidURL, err)
 	}
-	hashStr := uhrpURL[len(uhrpPrefix):]
-	return hex.DecodeString(hashStr)
+
+	return hash, nil
 }

@@ -1,62 +1,48 @@
+// Package main looks up a file's metadata by UHRP URL on a running UHRP storage server.
+//
+// Usage: go run ./examples/find_file [uhrp-url]
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/bsv-blockchain/go-sdk/storage"
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/defs"
-	wdkStorage "github.com/bsv-blockchain/go-wallet-toolbox/pkg/storage"
-	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/wallet"
+	"github.com/bsv-blockchain/go-uhrp-storage-server/examples/internal/exampleclient"
 )
 
+// defaultFileURL is looked up when no UHRP URL is given on the command line.
+const defaultFileURL = "uhrp://xtDGjhQW8HYVjT3n1RFNMzojq1uDVdGYdaotUiLrYrhKzmVij"
+
 func main() {
-	serverURL := "http://localhost:8080"
-	storageURL := "http://localhost:8100"
-	fmt.Printf("Starting Go repo test script against: %s\n", serverURL)
-
-	// 1. Setup Auth - create user wallet
-	privateKey, _ := ec.PrivateKeyFromBytes([]byte("example_xpriv_key"))
-
-	pw, err := sdkWallet.NewCompletedProtoWallet(privateKey)
-	if err != nil {
-		log.Fatalf("failed to create proto wallet: %v", err)
-	}
-	wspc, cleanup, err := wdkStorage.NewClient(storageURL, pw)
-	if err != nil {
-		log.Fatalf("failed to create storage provider client: %v", err)
+	fileURL := defaultFileURL
+	if len(os.Args) > 1 {
+		fileURL = os.Args[1]
 	}
 
+	if err := run(context.Background(), fileURL); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context, fileURL string) error {
+	uploader, cleanup, err := exampleclient.NewUploader()
+	if err != nil {
+		return err
+	}
 	defer cleanup()
 
-	aliceWallet, err := wallet.New(defs.NetworkMainnet, privateKey, wspc)
+	fileMetadata, err := uploader.FindFile(ctx, fileURL)
 	if err != nil {
-		log.Fatalf("failed: %v", err)
+		return fmt.Errorf("find file metadata: %w", err)
 	}
 
-	fmt.Printf("User Identity Key (Client): %s\n", privateKey.PubKey().ToDERHex())
+	// Server-supplied strings are printed quoted so they cannot forge log lines.
+	log.Printf("File Metadata: name=%q size=%q mimeType=%q expiryTime=%d",
+		fileMetadata.Name, fileMetadata.Size, fileMetadata.MimeType, fileMetadata.ExpiryTime)
+	log.Println("--- Downloading file content ---")
+	log.Printf("You can view it at: %q", exampleclient.ServerURL()+"/cdn/"+fileMetadata.Name)
 
-	// 2. Initialize the StorageUploader
-	uploader, err := storage.NewUploader(storage.UploaderConfig{
-		StorageURL: serverURL,
-		Wallet:     aliceWallet,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create uploader: %v", err)
-	}
-
-	// 3. Find file by URL
-	fileURL := "uhrp://xtDGjhQW8HYVjT3n1RFNMzojq1uDVdGYdaotUiLrYrhKzmVij"
-
-	fileMetadata, err := uploader.FindFile(context.Background(), fileURL)
-	if err != nil {
-		fmt.Printf("Failed to find file metadata: %v\n", err)
-	} else {
-		fmt.Printf("File Metadata: %+v\n", fileMetadata)
-		fmt.Println("\n--- Downloading file content ---")
-		fmt.Printf("You can view it at: %s/cdn/%s\n", serverURL, fileMetadata.Name)
-	}
+	return nil
 }

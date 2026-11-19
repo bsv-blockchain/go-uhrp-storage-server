@@ -1,35 +1,134 @@
 package pricing
 
 import (
+	"context"
+	"errors"
+	"math"
+	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type mockExchangeRateProvider struct{}
+var errRateUnavailable = errors.New("rate unavailable")
 
-func (m mockExchangeRateProvider) GetExchangeRate() (float64, error) {
-	return 30.0, nil
+// staticRateProvider always returns the same rate.
+type staticRateProvider float64
+
+func (p staticRateProvider) GetExchangeRate(context.Context) (float64, error) {
+	return float64(p), nil
 }
 
-func TestGetPrice_MinimumPrice(t *testing.T) {
-	calc := NewCalculator(0.03, mockExchangeRateProvider{})
-	// Very small file, short period should still return minimum of 10 sats
-	price, err := calc.GetPrice(1, 1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// flakyRateProvider fails the first failures calls, then returns rate.
+type flakyRateProvider struct {
+	failures int32
+	rate     float64
+	calls    atomic.Int32
+}
+
+func (p *flakyRateProvider) GetExchangeRate(context.Context) (float64, error) {
+	if p.calls.Add(1) <= p.failures {
+		return 0, errRateUnavailable
 	}
-	if price < 10 {
-		t.Errorf("expected minimum price of 10, got %d", price)
+
+	return p.rate, nil
+}
+
+func TestCalculatorGetPrice(t *testing.T) {
+	tests := []struct {
+		name            string
+		fileSize        int64
+		retentionPeriod int64
+		want            int64
+	}{
+		{name: "tiny file pays the minimum", fileSize: 1, retentionPeriod: 1, want: MinimumPriceSatoshis},
+		{name: "zero size pays the minimum", fileSize: 0, retentionPeriod: 60, want: MinimumPriceSatoshis},
+		// 1 GB for one 30-day month at $0.03/GB-month and $30/BSV: 0.03 / 30 * 1e8 sats.
+		{name: "one GB for one month", fileSize: 1_000_000_000, retentionPeriod: 43_200, want: 100_000},
+		{name: "price scales with retention", fileSize: 1_000_000_000, retentionPeriod: 2 * 43_200, want: 200_000},
+	}
+
+	calc := NewCalculator(0.03, staticRateProvider(30))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calc.GetPrice(t.Context(), tt.fileSize, tt.retentionPeriod)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
 
-func TestGetPrice_LargerFile(t *testing.T) {
-	calc := NewCalculator(0.03, mockExchangeRateProvider{})
-	// 1 GB for 1 month (43200 minutes)
-	price, err := calc.GetPrice(1_000_000_000, 43200)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestCalculatorGetPriceRetriesTransientFailures(t *testing.T) {
+	provider := &flakyRateProvider{failures: exchangeRateAttempts - 1, rate: 30}
+
+	got, err := NewCalculator(0.03, provider).GetPrice(t.Context(), 1_000_000_000, 43_200)
+	require.NoError(t, err)
+	assert.Equal(t, int64(100_000), got)
+	assert.Equal(t, int32(exchangeRateAttempts), provider.calls.Load())
+}
+
+func TestCalculatorGetPriceGivesUpAfterMaxAttempts(t *testing.T) {
+	provider := &flakyRateProvider{failures: math.MaxInt32}
+
+	_, err := NewCalculator(0.03, provider).GetPrice(t.Context(), 1, 1)
+	require.ErrorIs(t, err, errRateUnavailable)
+	assert.Equal(t, int32(exchangeRateAttempts), provider.calls.Load())
+}
+
+func TestCalculatorGetPriceStopsWhenContextIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	provider := &flakyRateProvider{failures: math.MaxInt32}
+
+	_, err := NewCalculator(0.03, provider).GetPrice(ctx, 1, 1)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, int32(1), provider.calls.Load(), "no retry after cancellation")
+}
+
+func TestCalculatorGetPriceRejectsInvalidRates(t *testing.T) {
+	for _, rate := range []float64{0, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		_, err := NewCalculator(0.03, staticRateProvider(rate)).GetPrice(t.Context(), 1, 1)
+		require.ErrorIs(t, err, ErrInvalidExchangeRate, "rate %v", rate)
 	}
-	if price < 10 {
-		t.Errorf("expected price >= 10, got %d", price)
+}
+
+func TestCalculatorGetPriceRejectsOverflow(t *testing.T) {
+	calc := NewCalculator(1e12, staticRateProvider(0.0001))
+
+	_, err := calc.GetPrice(t.Context(), math.MaxInt64, math.MaxInt64)
+	require.ErrorIs(t, err, ErrPriceOverflow)
+}
+
+func FuzzCalculatorGetPrice(f *testing.F) {
+	f.Add(int64(1024), int64(60), 30.0)
+	f.Add(int64(0), int64(0), 1.0)
+	f.Add(int64(-1), int64(-1), 0.5)
+	f.Add(int64(math.MaxInt64), int64(math.MaxInt64), 1e-9)
+
+	f.Fuzz(func(t *testing.T, fileSize, retentionPeriod int64, rate float64) {
+		price, err := NewCalculator(0.03, staticRateProvider(rate)).GetPrice(t.Context(), fileSize, retentionPeriod)
+		if err != nil {
+			if !errors.Is(err, ErrInvalidExchangeRate) {
+				require.ErrorIs(t, err, ErrPriceOverflow)
+			}
+
+			return
+		}
+
+		assert.GreaterOrEqual(t, price, int64(MinimumPriceSatoshis))
+	})
+}
+
+func BenchmarkCalculatorGetPrice(b *testing.B) {
+	calc := NewCalculator(0.03, staticRateProvider(30))
+	ctx := b.Context()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		_, _ = calc.GetPrice(ctx, 1_000_000_000, 43_200)
 	}
 }

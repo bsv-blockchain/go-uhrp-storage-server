@@ -2,101 +2,112 @@ package handlers_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
-	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet/mocks"
 )
 
-func TestListHandler_ServeHTTP(t *testing.T) {
-	pubHex := "026210202604084f83b63a6a978f135bbf32d525701f5c64390757a419241d7c38"
-	pub, _ := ec.PublicKeyFromString(pubHex)
+func uhrpURLTag(url string) string {
+	return "uhrp_url_" + hex.EncodeToString([]byte(url))
+}
+
+func TestListHandlerServeHTTP(t *testing.T) {
+	pub := testIdentityKey(t)
 
 	tests := []struct {
 		name           string
 		identityKey    *ec.PublicKey
-		mockListFunc   func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error)
+		listOutputs    listOutputsFunc
 		expectedStatus int
-		expectedCount  int
+		expectedURLs   []string
 	}{
 		{
-			name:           "Unauthorized",
-			identityKey:    nil,
+			name:           "unauthorized",
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name:        "Success - Empty List",
-			identityKey: pub,
-			mockListFunc: func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error) {
-				return &sdkWallet.ListOutputsResult{Outputs: []sdkWallet.Output{}}, nil
-			},
+			name:           "empty list",
+			identityKey:    pub,
+			listOutputs:    listOutputs(),
 			expectedStatus: http.StatusOK,
-			expectedCount:  0,
+			expectedURLs:   []string{},
 		},
 		{
-			name:        "Success - Multiple Items",
+			name:        "multiple items in wallet order",
 			identityKey: pub,
-			mockListFunc: func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error) {
-				return &sdkWallet.ListOutputsResult{
-					Outputs: []sdkWallet.Output{
-						{
-							Tags: []string{
-								"uhrp_url_756872703a2f2f6851776361524338353174757a427067785a6b714455437732345a7662775337426e6447546248356e6364685567797a50",
-								"expiry_time_2000000000",
-							},
-						},
-						{
-							Tags: []string{
-								"uhrp_url_756872703a2f2f524535714b4a4b4467616d4453737133695839453239714e6636517442644848456d7168326564354d7748637963694a4e",
-								"expiry_time_2000000000",
-							},
-						},
-					},
-				}, nil
-			},
+			listOutputs: listOutputs(
+				sdkWallet.Output{Tags: []string{uhrpURLTag("uhrp://second"), "expiry_time_2000000000"}},
+				sdkWallet.Output{Tags: []string{uhrpURLTag("uhrp://first"), "expiry_time_2000000000"}},
+			),
 			expectedStatus: http.StatusOK,
-			expectedCount:  2,
+			expectedURLs:   []string{"uhrp://second", "uhrp://first"},
+		},
+		{
+			name:        "wallet failure",
+			identityKey: pub,
+			listOutputs: func(context.Context, sdkWallet.ListOutputsArgs, string) (*sdkWallet.ListOutputsResult, error) {
+				return nil, errWalletUnavailable
+			},
+			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mw := &mocks.MockWallet{
-				ListOutputsFunc: tt.mockListFunc,
-			}
-			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
-			wp.SetWallet(mw)
-
-			h := &handlers.ListHandler{WalletProvider: wp, Logger: slog.Default()}
-
-			req := httptest.NewRequest("GET", "/list", nil)
-			if tt.identityKey != nil {
-				ctx := context.WithValue(req.Context(), middlewares.IdentityContextKey, tt.identityKey)
-				req = req.WithContext(ctx)
+			h := &handlers.ListHandler{
+				WalletProvider: newProvider(&mocks.MockWallet{ListOutputsFunc: tt.listOutputs}),
+				Logger:         slog.Default(),
 			}
 
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
+			w := serve(h, newRequest(t, http.MethodGet, "/list", nil, tt.identityKey))
+			require.Equal(t, tt.expectedStatus, w.Code, "body: %s", w.Body.String())
 
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			if tt.expectedStatus != http.StatusOK {
+				return
 			}
 
-			if tt.expectedStatus == http.StatusOK {
-				var resp handlers.ListResponse
-				json.Unmarshal(w.Body.Bytes(), &resp)
-				if len(resp.Uploads) != tt.expectedCount {
-					t.Errorf("expected %d uploads, got %d", tt.expectedCount, len(resp.Uploads))
-				}
+			resp := decode[handlers.ListResponse](t, w)
+			assert.Equal(t, "success", resp.Status)
+
+			urls := make([]string, 0, len(resp.Uploads))
+			for _, u := range resp.Uploads {
+				urls = append(urls, u.UhrpURL)
 			}
+
+			assert.Equal(t, tt.expectedURLs, urls)
 		})
 	}
+}
+
+func TestListHandlerPassesPagination(t *testing.T) {
+	var gotLimit, gotOffset uint32
+
+	mock := &mocks.MockWallet{
+		ListOutputsFunc: func(_ context.Context, args sdkWallet.ListOutputsArgs, _ string) (*sdkWallet.ListOutputsResult, error) {
+			gotLimit, gotOffset = *args.Limit, *args.Offset
+			return &sdkWallet.ListOutputsResult{}, nil
+		},
+	}
+
+	h := &handlers.ListHandler{WalletProvider: newProvider(mock), Logger: slog.Default()}
+
+	w := serve(h, newRequest(t, http.MethodGet, "/list", `{"limit":5,"offset":10}`, testIdentityKey(t)))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, uint32(5), gotLimit)
+	assert.Equal(t, uint32(10), gotOffset)
+
+	// A malformed body falls back to the wallet defaults.
+	w = serve(h, newRequest(t, http.MethodGet, "/list", `not json`, testIdentityKey(t)))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, uint32(200), gotLimit)
+	assert.Equal(t, uint32(0), gotOffset)
 }

@@ -1,17 +1,6 @@
 basePath: /
 definitions:
-  handlers.findData:
-    properties:
-      expiryTime:
-        type: integer
-      mimeType:
-        type: string
-      name:
-        type: string
-      size:
-        type: string
-    type: object
-  handlers.findResponse:
+  handlers.FindResponse:
     properties:
       code:
         type: string
@@ -22,7 +11,7 @@ definitions:
       status:
         type: string
     type: object
-  handlers.listResponse:
+  handlers.ListResponse:
     properties:
       code:
         type: string
@@ -34,6 +23,67 @@ definitions:
         items:
           $ref: '#/definitions/handlers.listUpload'
         type: array
+    type: object
+  handlers.RenewRequest:
+    properties:
+      additionalMinutes:
+        type: integer
+      limit:
+        type: integer
+      offset:
+        type: integer
+      uhrpUrl:
+        type: string
+    type: object
+  handlers.RenewResponse:
+    properties:
+      amount:
+        type: integer
+      code:
+        type: string
+      description:
+        type: string
+      newExpiryTime:
+        type: integer
+      prevExpiryTime:
+        type: integer
+      status:
+        type: string
+    type: object
+  handlers.UploadRequest:
+    properties:
+      fileSize:
+        type: integer
+      retentionPeriod:
+        type: integer
+    type: object
+  handlers.UploadResponse:
+    properties:
+      amount:
+        type: integer
+      code:
+        type: string
+      description:
+        type: string
+      requiredHeaders:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        type: string
+      uploadURL:
+        type: string
+    type: object
+  handlers.findData:
+    properties:
+      expiryTime:
+        type: integer
+      mimeType:
+        type: string
+      name:
+        type: string
+      size:
+        type: string
     type: object
   handlers.listUpload:
     properties:
@@ -56,56 +106,6 @@ definitions:
       quote:
         type: integer
     type: object
-  handlers.renewRequest:
-    properties:
-      additionalMinutes:
-        type: integer
-      limit:
-        type: integer
-      offset:
-        type: integer
-      uhrpUrl:
-        type: string
-    type: object
-  handlers.renewResponse:
-    properties:
-      amount:
-        type: integer
-      code:
-        type: string
-      description:
-        type: string
-      newExpiryTime:
-        type: integer
-      prevExpiryTime:
-        type: integer
-      status:
-        type: string
-    type: object
-  handlers.uploadRequest:
-    properties:
-      fileSize:
-        type: integer
-      retentionPeriod:
-        type: integer
-    type: object
-  handlers.uploadResponse:
-    properties:
-      amount:
-        type: integer
-      code:
-        type: string
-      description:
-        type: string
-      requiredHeaders:
-        additionalProperties:
-          type: string
-        type: object
-      status:
-        type: string
-      uploadURL:
-        type: string
-    type: object
   responses.ErrorResponse:
     properties:
       code:
@@ -118,29 +118,28 @@ definitions:
 host: localhost:8080
 info:
   contact: {}
-  description: The official UHRP Storage Server implementation in Go, allowing anyone
-    to host their own public file CDN.
+  description: The official UHRP Storage Server implementation in Go, allowing anyone to host their own public file CDN.
   title: UHRP Storage Server API
   version: "1.0"
 paths:
   /find:
     get:
       consumes:
-      - application/json
+        - application/json
       description: Find specific UHRP file advertisement.
       parameters:
-      - description: UHRP URL of the file to find
-        in: query
-        name: uhrpUrl
-        required: true
-        type: string
+        - description: UHRP URL of the file to find
+          in: query
+          name: uhrpUrl
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.findResponse'
+            $ref: '#/definitions/handlers.FindResponse'
         "400":
           description: Bad Request
           schema:
@@ -157,20 +156,21 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/responses.ErrorResponse'
+      security:
+        - AuthfetchIdentity: []
       summary: Find file metadata
   /list:
     get:
       consumes:
-      - application/json
-      description: Retrieve a list of all currently active (non-expired) UHRP advertisements
-        created by the authenticated user.
+        - application/json
+      description: Retrieve a list of all currently active (non-expired) UHRP advertisements created by the authenticated user.
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.listResponse'
+            $ref: '#/definitions/handlers.ListResponse'
         "401":
           description: Unauthorized
           schema:
@@ -179,41 +179,42 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/responses.ErrorResponse'
+      security:
+        - AuthfetchIdentity: []
       summary: List user's active file uploads
   /put:
     put:
       consumes:
-      - application/octet-stream
-      description: Upload a file's binary content using a pre-signed URL generated
-        by the /upload endpoint.
+        - application/octet-stream
+      description: Upload a file's binary content using a pre-signed URL generated by the /upload endpoint.
       parameters:
-      - description: Uploader's identity key
-        in: query
-        name: uploader
-        required: true
-        type: string
-      - description: Unique object identifier
-        in: query
-        name: objectID
-        required: true
-        type: string
-      - description: Expected file size in bytes
-        in: query
-        name: fileSize
-        required: true
-        type: string
-      - description: HMAC expiry timestamp
-        in: query
-        name: expiry
-        required: true
-        type: string
-      - description: HMAC signature validating the upload request
-        in: query
-        name: hmac
-        required: true
-        type: string
+        - description: Uploader's identity key
+          in: query
+          name: uploader
+          required: true
+          type: string
+        - description: Unique object identifier
+          in: query
+          name: objectID
+          required: true
+          type: string
+        - description: Expected file size in bytes
+          in: query
+          name: fileSize
+          required: true
+          type: string
+        - description: HMAC expiry timestamp
+          in: query
+          name: expiry
+          required: true
+          type: string
+        - description: HMAC signature validating the upload request
+          in: query
+          name: hmac
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: Success response
@@ -237,18 +238,17 @@ paths:
   /quote:
     post:
       consumes:
-      - application/json
-      description: Get a price quote in satoshis for hosting a file of a specific
-        size for a specific duration.
+        - application/json
+      description: Get a price quote in satoshis for hosting a file of a specific size for a specific duration.
       parameters:
-      - description: File size and retention period details
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.quoteRequest'
+        - description: File size and retention period details
+          in: body
+          name: request
+          required: true
+          schema:
+            $ref: '#/definitions/handlers.quoteRequest'
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: OK
@@ -266,22 +266,22 @@ paths:
   /renew:
     post:
       consumes:
-      - application/json
+        - application/json
       description: Extend the storage time for an existing UHRP file advertisement.
       parameters:
-      - description: UHRP URL and additional minutes to host
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.renewRequest'
+        - description: UHRP URL and additional minutes to host
+          in: body
+          name: request
+          required: true
+          schema:
+            $ref: '#/definitions/handlers.RenewRequest'
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.renewResponse'
+            $ref: '#/definitions/handlers.RenewResponse'
         "400":
           description: Bad Request
           schema:
@@ -298,27 +298,28 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/responses.ErrorResponse'
+      security:
+        - AuthfetchIdentity: []
       summary: Renew an active file
   /upload:
     post:
       consumes:
-      - application/json
-      description: Get a pre-signed URL and payment details to upload a file to the
-        UHRP storage server.
+        - application/json
+      description: Get a pre-signed URL and payment details to upload a file to the UHRP storage server.
       parameters:
-      - description: File size and desired retention period
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.uploadRequest'
+        - description: File size and desired retention period
+          in: body
+          name: request
+          required: true
+          schema:
+            $ref: '#/definitions/handlers.UploadRequest'
       produces:
-      - application/json
+        - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.uploadResponse'
+            $ref: '#/definitions/handlers.UploadResponse'
         "400":
           description: Bad Request
           schema:
@@ -331,6 +332,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/responses.ErrorResponse'
+      security:
+        - AuthfetchIdentity: []
       summary: Request an upload URL
 securityDefinitions:
   AuthfetchIdentity:
