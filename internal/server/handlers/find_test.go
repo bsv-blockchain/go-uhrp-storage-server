@@ -1,115 +1,107 @@
 package handlers_test
 
 import (
-	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
-	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet/mocks"
 )
 
-func TestFindHandler_ServeHTTP(t *testing.T) {
-	pubHex := "026210202604084f83b63a6a978f135bbf32d525701f5c64390757a419241d7c38"
-	pub, _ := ec.PublicKeyFromString(pubHex)
+func TestFindHandlerServeHTTP(t *testing.T) {
+	pub := testIdentityKey(t)
 
 	tests := []struct {
 		name           string
 		uhrpURL        string
 		identityKey    *ec.PublicKey
-		mockListFunc   func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error)
+		listOutputs    listOutputsFunc
 		expectedStatus int
 		expectedCode   string
 	}{
 		{
-			name:           "Unauthorized - No Identity Key",
+			name:           "unauthorized - no identity key",
 			uhrpURL:        "uhrp:test",
-			identityKey:    nil,
 			expectedStatus: http.StatusUnauthorized,
 			expectedCode:   "ERR_UNAUTHORIZED",
 		},
 		{
-			name:           "Bad Request - No uhrpUrl",
-			uhrpURL:        "",
+			name:           "bad request - no uhrpUrl",
 			identityKey:    pub,
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   "ERR_NO_UHRP_URL",
 		},
 		{
-			name:        "Not Found - No Advertisement",
-			uhrpURL:     "uhrp:notfound",
-			identityKey: pub,
-			mockListFunc: func(ctx context.Context, args sdkWallet.ListOutputsArgs, walletName string) (*sdkWallet.ListOutputsResult, error) {
-				return &sdkWallet.ListOutputsResult{Outputs: []sdkWallet.Output{}}, nil
-			},
+			name:           "not found - no advertisement",
+			uhrpURL:        "uhrp:notfound",
+			identityKey:    pub,
+			listOutputs:    listOutputs(),
 			expectedStatus: http.StatusNotFound,
 			expectedCode:   "ERR_NOT_FOUND",
 		},
 		{
-			name:        "Success - Valid Find",
+			name:        "success - valid find",
 			uhrpURL:     "uhrp:success",
 			identityKey: pub,
-			mockListFunc: func(ctx context.Context, args sdkWallet.ListOutputsArgs, walletName string) (*sdkWallet.ListOutputsResult, error) {
-				return &sdkWallet.ListOutputsResult{
-					Outputs: []sdkWallet.Output{
-						{
-							Tags: []string{
-								"uhrp_url_756872703a73756363657373", // hex for uhrp:success
-								"object_identifier_test-obj",
-								"size_1024",
-								"content_type_image/png",
-								"expiry_time_2000000000",
-							},
-						},
-					},
-				}, nil
-			},
+			listOutputs: listOutputs(sdkWallet.Output{Tags: []string{
+				uhrpURLTag("uhrp:success"),
+				"object_identifier_test-obj",
+				"size_1024",
+				"content_type_image/png",
+				"expiry_time_2000000000",
+			}}),
 			expectedStatus: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mw := &mocks.MockWallet{
-				ListOutputsFunc: tt.mockListFunc,
+			h := &handlers.FindHandler{
+				WalletProvider: newProvider(&mocks.MockWallet{ListOutputsFunc: tt.listOutputs}),
+				Logger:         slog.Default(),
 			}
-			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
-			wp.SetWallet(mw)
 
-			h := &handlers.FindHandler{WalletProvider: wp, Logger: slog.Default()}
-
-			url := "/find"
+			target := "/find"
 			if tt.uhrpURL != "" {
-				url += "?uhrpUrl=" + tt.uhrpURL
-			}
-			req := httptest.NewRequest("GET", url, nil)
-
-			if tt.identityKey != nil {
-				ctx := context.WithValue(req.Context(), middlewares.IdentityContextKey, tt.identityKey)
-				req = req.WithContext(ctx)
+				target += "?uhrpUrl=" + url.QueryEscape(tt.uhrpURL)
 			}
 
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
+			w := serve(h, newRequest(t, http.MethodGet, target, nil, tt.identityKey))
+			require.Equal(t, tt.expectedStatus, w.Code, "body: %s", w.Body.String())
 
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
+			resp := decode[handlers.FindResponse](t, w)
+			assert.Equal(t, tt.expectedCode, resp.Code)
 
-			if tt.expectedCode != "" {
-				var resp handlers.FindResponse
-				json.Unmarshal(w.Body.Bytes(), &resp)
-				if resp.Code != tt.expectedCode {
-					t.Errorf("expected code %s, got %s", tt.expectedCode, resp.Code)
-				}
+			if tt.expectedStatus == http.StatusOK {
+				require.NotNil(t, resp.Data)
+				assert.Equal(t, "success", resp.Status)
 			}
 		})
 	}
+}
+
+func TestFindHandlerResponseData(t *testing.T) {
+	h := &handlers.FindHandler{
+		WalletProvider: newProvider(&mocks.MockWallet{ListOutputsFunc: listOutputs(sdkWallet.Output{Tags: []string{
+			uhrpURLTag("uhrp:success"),
+			"object_identifier_test-obj", // not hex: kept as-is
+			"size_1024",
+			"content_type_image/png",
+			"expiry_time_2000000000",
+		}})}),
+		Logger: slog.Default(),
+	}
+
+	w := serve(h, newRequest(t, http.MethodGet, "/find?uhrpUrl=uhrp:success", nil, testIdentityKey(t)))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t,
+		`{"status":"success","data":{"name":"test-obj","size":"1024","mimeType":"image/png","expiryTime":2000000000}}`,
+		w.Body.String())
 }

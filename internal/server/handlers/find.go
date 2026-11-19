@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -16,11 +15,6 @@ type FindHandler struct {
 	Logger         *slog.Logger
 }
 
-type findReqBody struct {
-	Limit  *uint32 `json:"limit"`
-	Offset *uint32 `json:"offset"`
-}
-
 type findData struct {
 	Name       string `json:"name"`
 	Size       string `json:"size"`
@@ -28,6 +22,7 @@ type findData struct {
 	ExpiryTime int64  `json:"expiryTime"`
 }
 
+// FindResponse is the body returned by GET /find.
 type FindResponse struct {
 	Status      string    `json:"status"`
 	Data        *findData `json:"data,omitempty"`
@@ -46,6 +41,7 @@ type FindResponse struct {
 // @Failure 401 {object} responses.ErrorResponse
 // @Failure 404 {object} responses.ErrorResponse
 // @Failure 500 {object} responses.ErrorResponse
+// @Security AuthfetchIdentity
 // @Router /find [get]
 func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	identityKey := middlewares.GetIdentityKey(r.Context())
@@ -60,22 +56,13 @@ func (h *FindHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var limit, offset uint32
-	if r.Body != nil {
-		var req findReqBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-			if req.Limit != nil {
-				limit = *req.Limit
-			}
-			if req.Offset != nil {
-				offset = *req.Offset
-			}
-		}
-	}
+	limit, offset := decodePagination(r)
 
 	_, meta, _, err := h.WalletProvider.FindAdvertisementByUhrpURL(r.Context(), uhrpURL, identityKey.ToDERHex(), limit, offset)
 	if err != nil {
+		h.Logger.DebugContext(r.Context(), "No active advertisement found", "uhrpUrl", uhrpURL, "error", err)
 		responses.WriteError(w, http.StatusNotFound, "ERR_NOT_FOUND", "No active advertisement found for the given uhrpUrl.")
+
 		return
 	}
 

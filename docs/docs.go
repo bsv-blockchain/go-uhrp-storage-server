@@ -17,6 +17,11 @@ const docTemplate = `{
     "paths": {
         "/find": {
             "get": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Find specific UHRP file advertisement.",
                 "consumes": [
                     "application/json"
@@ -38,7 +43,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.findResponse"
+                            "$ref": "#/definitions/handlers.FindResponse"
                         }
                     },
                     "400": {
@@ -70,6 +75,11 @@ const docTemplate = `{
         },
         "/list": {
             "get": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Retrieve a list of all currently active (non-expired) UHRP advertisements created by the authenticated user.",
                 "consumes": [
                     "application/json"
@@ -82,7 +92,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.listResponse"
+                            "$ref": "#/definitions/handlers.ListResponse"
                         }
                     },
                     "401": {
@@ -223,6 +233,11 @@ const docTemplate = `{
         },
         "/renew": {
             "post": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Extend the storage time for an existing UHRP file advertisement.",
                 "consumes": [
                     "application/json"
@@ -238,7 +253,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.renewRequest"
+                            "$ref": "#/definitions/handlers.RenewRequest"
                         }
                     }
                 ],
@@ -246,7 +261,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.renewResponse"
+                            "$ref": "#/definitions/handlers.RenewResponse"
                         }
                     },
                     "400": {
@@ -278,6 +293,11 @@ const docTemplate = `{
         },
         "/upload": {
             "post": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Get a pre-signed URL and payment details to upload a file to the UHRP storage server.",
                 "consumes": [
                     "application/json"
@@ -293,7 +313,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.uploadRequest"
+                            "$ref": "#/definitions/handlers.UploadRequest"
                         }
                     }
                 ],
@@ -301,7 +321,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.uploadResponse"
+                            "$ref": "#/definitions/handlers.UploadResponse"
                         }
                     },
                     "400": {
@@ -327,24 +347,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handlers.findData": {
-            "type": "object",
-            "properties": {
-                "expiryTime": {
-                    "type": "integer"
-                },
-                "mimeType": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.findResponse": {
+        "handlers.FindResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -361,7 +364,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.listResponse": {
+        "handlers.ListResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -378,6 +381,100 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handlers.listUpload"
                     }
+                }
+            }
+        },
+        "handlers.RenewRequest": {
+            "type": "object",
+            "properties": {
+                "additionalMinutes": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "uhrpUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.RenewResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "newExpiryTime": {
+                    "type": "integer"
+                },
+                "prevExpiryTime": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.UploadRequest": {
+            "type": "object",
+            "properties": {
+                "fileSize": {
+                    "type": "integer"
+                },
+                "retentionPeriod": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.UploadResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "requiredHeaders": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uploadURL": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.findData": {
+            "type": "object",
+            "properties": {
+                "expiryTime": {
+                    "type": "integer"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "string"
                 }
             }
         },
@@ -410,83 +507,6 @@ const docTemplate = `{
             "properties": {
                 "quote": {
                     "type": "integer"
-                }
-            }
-        },
-        "handlers.renewRequest": {
-            "type": "object",
-            "properties": {
-                "additionalMinutes": {
-                    "type": "integer"
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "uhrpUrl": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.renewResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "newExpiryTime": {
-                    "type": "integer"
-                },
-                "prevExpiryTime": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.uploadRequest": {
-            "type": "object",
-            "properties": {
-                "fileSize": {
-                    "type": "integer"
-                },
-                "retentionPeriod": {
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.uploadResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "requiredHeaders": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "uploadURL": {
-                    "type": "string"
                 }
             }
         },

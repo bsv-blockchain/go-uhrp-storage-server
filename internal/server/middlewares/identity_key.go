@@ -1,3 +1,4 @@
+// Package middlewares holds the server's HTTP middleware: identity-key extraction and CDN file serving.
 package middlewares
 
 import (
@@ -6,11 +7,13 @@ import (
 
 	"github.com/bsv-blockchain/go-bsv-middleware/pkg/middleware"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 )
 
 type contextKey string
 
+// IdentityContextKey is the request context key holding the caller's validated *ec.PublicKey.
 const IdentityContextKey contextKey = "identityKey"
 
 // RequireIdentityKey is a middleware that extracts the identity key from the request context
@@ -38,5 +41,6 @@ func GetIdentityKey(ctx context.Context) *ec.PublicKey {
 	if key, ok := ctx.Value(IdentityContextKey).(*ec.PublicKey); ok {
 		return key
 	}
+
 	return nil
 }

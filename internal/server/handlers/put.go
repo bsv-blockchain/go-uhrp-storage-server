@@ -1,15 +1,18 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	crypto "github.com/bsv-blockchain/go-sdk/primitives/hash"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/responses"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/storage"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
@@ -21,6 +24,17 @@ type PutHandler struct {
 	WalletProvider *walletpkg.Provider
 	HostingDomain  string
 	Logger         *slog.Logger
+}
+
+// putParams are the presigned upload URL's query parameters, as issued by /upload.
+type putParams struct {
+	uploader    string
+	objectID    string
+	fileSizeStr string
+	fileSize    int64
+	expiry      string
+	expiryUnix  int64
+	hmac        string
 }
 
 // ServeHTTP handles the /put endpoint request for file upload.
@@ -39,88 +53,125 @@ type PutHandler struct {
 // @Failure 500 {object} responses.ErrorResponse
 // @Router /put [put]
 func (h *PutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	uploader := q.Get("uploader")
-	objectID := q.Get("objectID")
-	fileSizeStr := q.Get("fileSize")
-	expiry := q.Get("expiry")
-	hmac := q.Get("hmac")
-
-	if objectID == "" || fileSizeStr == "" || expiry == "" || hmac == "" {
-		responses.WriteError(w, http.StatusBadRequest, "", "Missing required query parameters")
+	params, problem := parsePutParams(r.URL.Query())
+	if problem != "" {
+		responses.WriteError(w, http.StatusBadRequest, "", problem)
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	// Verify the presigned URL before reading the body, so an unauthorized
+	// request cannot make the server buffer an arbitrarily large upload.
+	if err := h.WalletProvider.VerifyUploaderHMAC(
+		r.Context(), params.fileSizeStr, params.objectID, params.expiry, params.uploader, params.hmac,
+	); err != nil {
+		h.writeHMACError(w, r, err)
+		return
+	}
+
+	// Read at most one byte more than the authorized size: enough to detect an oversized body.
+	body, err := io.ReadAll(io.LimitReader(r.Body, params.fileSize+1))
 	if err != nil {
 		responses.WriteError(w, http.StatusBadRequest, "", "Failed to read request body")
 		return
 	}
-	defer r.Body.Close()
 
-	fileSize, _ := strconv.ParseInt(fileSizeStr, 10, 64)
-	if fileSize != int64(len(body)) {
+	if int64(len(body)) != params.fileSize {
 		responses.WriteError(w, http.StatusBadRequest, "", "Size mismatch")
 		return
 	}
 
-	if err := h.WalletProvider.VerifyUploaderHMAC(r.Context(), fileSizeStr, objectID, expiry, uploader, hmac); err != nil {
-		if strings.Contains(err.Error(), "invalid HMAC") {
-			responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Invalid HMAC")
-		} else {
-			responses.WriteError(w, http.StatusInternalServerError, "ERR_HMAC_VERIFY", "HMAC verification failed")
-		}
-		return
-	}
-
-	if h.Store.Exists(objectID) {
+	if h.Store.Exists(params.objectID) {
 		responses.WriteError(w, http.StatusBadRequest, "", "File exists")
 		return
 	}
 
-	if err := h.Store.Write(objectID, body); err != nil {
+	if err = h.Store.Write(params.objectID, body); err != nil {
+		h.Logger.ErrorContext(r.Context(), "Failed to write uploaded file", "objectID", params.objectID, "error", err)
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to write file")
+
 		return
 	}
 
 	if strings.HasPrefix(h.HostingDomain, "localhost") {
-		slog.Debug("Not advertising, localhost")
+		h.Logger.DebugContext(r.Context(), "Not advertising, localhost")
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "No advertising in localhost.")
+
 		return
 	}
 
-	hash := crypto.Sha256(body)
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	var expiryInt int64
-	if t, err := time.Parse(time.RFC3339, expiry); err == nil {
-		expiryInt = t.Unix()
-	} else {
-		expiryInt, err = strconv.ParseInt(expiry, 10, 64)
-		if err != nil {
-			responses.WriteError(w, http.StatusBadRequest, "", "Invalid expiry")
-			return
-		}
-	}
-
 	err = h.WalletProvider.CreateAdvertisement(r.Context(), h.WalletProvider.OverlayNetwork(), walletpkg.CreateAdParams{
-		Hash:          hash,
-		URL:           fmt.Sprintf("https://%s/cdn/%s", h.HostingDomain, objectID),
-		ExpirySecs:    expiryInt,
+		Hash:          crypto.Sha256(body),
+		URL:           fmt.Sprintf("https://%s/cdn/%s", h.HostingDomain, params.objectID),
+		ExpirySecs:    params.expiryUnix,
 		ContentType:   contentType,
-		ContentLength: fileSize,
-		ObjectID:      objectID,
-		Uploader:      uploader,
+		ContentLength: params.fileSize,
+		ObjectID:      params.objectID,
+		Uploader:      params.uploader,
 	})
-
 	if err != nil {
-		h.Logger.Error("Failed to create UHRP advertisement", "error", err)
+		h.Logger.ErrorContext(r.Context(), "Failed to create UHRP advertisement", "error", err)
 		responses.WriteError(w, http.StatusInternalServerError, "ERR_INTERNAL", "Failed to broadcast advertisement")
+
 		return
 	}
 
 	responses.WriteJSON(w, http.StatusOK, map[string]string{"status": "success"})
+}
+
+// writeHMACError maps an HMAC verification failure to 401 (bad HMAC) or 500 (verification could not run).
+func (h *PutHandler) writeHMACError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, walletpkg.ErrInvalidHMAC) || errors.Is(err, walletpkg.ErrInvalidHMACFormat) {
+		responses.WriteError(w, http.StatusUnauthorized, "ERR_UNAUTHORIZED", "Invalid HMAC")
+		return
+	}
+
+	h.Logger.ErrorContext(r.Context(), "Failed to verify upload HMAC", "error", err)
+	responses.WriteError(w, http.StatusInternalServerError, "ERR_HMAC_VERIFY", "HMAC verification failed")
+}
+
+// parsePutParams reads and validates the presigned URL's query parameters.
+// It returns a non-empty problem description when they are missing or malformed.
+func parsePutParams(q url.Values) (putParams, string) {
+	p := putParams{
+		uploader:    q.Get("uploader"),
+		objectID:    q.Get("objectID"),
+		fileSizeStr: q.Get("fileSize"),
+		expiry:      q.Get("expiry"),
+		hmac:        q.Get("hmac"),
+	}
+
+	if p.objectID == "" || p.fileSizeStr == "" || p.expiry == "" || p.hmac == "" {
+		return p, "Missing required query parameters"
+	}
+
+	fileSize, err := strconv.ParseInt(p.fileSizeStr, 10, 64)
+	if err != nil || fileSize < 0 || fileSize > maxFileSizeBytes {
+		return p, "Invalid fileSize"
+	}
+
+	expiryUnix, ok := parseExpiry(p.expiry)
+	if !ok {
+		return p, "Invalid expiry"
+	}
+
+	p.fileSize = fileSize
+	p.expiryUnix = expiryUnix
+
+	return p, ""
+}
+
+// parseExpiry accepts an RFC 3339 timestamp (what /upload issues) or Unix seconds.
+func parseExpiry(expiry string) (int64, bool) {
+	if t, err := time.Parse(time.RFC3339, expiry); err == nil {
+		return t.Unix(), true
+	}
+
+	unix, err := strconv.ParseInt(expiry, 10, 64)
+
+	return unix, err == nil
 }

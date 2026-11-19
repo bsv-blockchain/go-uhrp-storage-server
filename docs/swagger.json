@@ -11,6 +11,11 @@
     "paths": {
         "/find": {
             "get": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Find specific UHRP file advertisement.",
                 "consumes": [
                     "application/json"
@@ -32,7 +37,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.findResponse"
+                            "$ref": "#/definitions/handlers.FindResponse"
                         }
                     },
                     "400": {
@@ -64,6 +69,11 @@
         },
         "/list": {
             "get": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Retrieve a list of all currently active (non-expired) UHRP advertisements created by the authenticated user.",
                 "consumes": [
                     "application/json"
@@ -76,7 +86,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.listResponse"
+                            "$ref": "#/definitions/handlers.ListResponse"
                         }
                     },
                     "401": {
@@ -217,6 +227,11 @@
         },
         "/renew": {
             "post": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Extend the storage time for an existing UHRP file advertisement.",
                 "consumes": [
                     "application/json"
@@ -232,7 +247,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.renewRequest"
+                            "$ref": "#/definitions/handlers.RenewRequest"
                         }
                     }
                 ],
@@ -240,7 +255,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.renewResponse"
+                            "$ref": "#/definitions/handlers.RenewResponse"
                         }
                     },
                     "400": {
@@ -272,6 +287,11 @@
         },
         "/upload": {
             "post": {
+                "security": [
+                    {
+                        "AuthfetchIdentity": []
+                    }
+                ],
                 "description": "Get a pre-signed URL and payment details to upload a file to the UHRP storage server.",
                 "consumes": [
                     "application/json"
@@ -287,7 +307,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.uploadRequest"
+                            "$ref": "#/definitions/handlers.UploadRequest"
                         }
                     }
                 ],
@@ -295,7 +315,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.uploadResponse"
+                            "$ref": "#/definitions/handlers.UploadResponse"
                         }
                     },
                     "400": {
@@ -321,24 +341,7 @@
         }
     },
     "definitions": {
-        "handlers.findData": {
-            "type": "object",
-            "properties": {
-                "expiryTime": {
-                    "type": "integer"
-                },
-                "mimeType": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.findResponse": {
+        "handlers.FindResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -355,7 +358,7 @@
                 }
             }
         },
-        "handlers.listResponse": {
+        "handlers.ListResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -372,6 +375,100 @@
                     "items": {
                         "$ref": "#/definitions/handlers.listUpload"
                     }
+                }
+            }
+        },
+        "handlers.RenewRequest": {
+            "type": "object",
+            "properties": {
+                "additionalMinutes": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "uhrpUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.RenewResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "newExpiryTime": {
+                    "type": "integer"
+                },
+                "prevExpiryTime": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.UploadRequest": {
+            "type": "object",
+            "properties": {
+                "fileSize": {
+                    "type": "integer"
+                },
+                "retentionPeriod": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.UploadResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "requiredHeaders": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uploadURL": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.findData": {
+            "type": "object",
+            "properties": {
+                "expiryTime": {
+                    "type": "integer"
+                },
+                "mimeType": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "string"
                 }
             }
         },
@@ -404,83 +501,6 @@
             "properties": {
                 "quote": {
                     "type": "integer"
-                }
-            }
-        },
-        "handlers.renewRequest": {
-            "type": "object",
-            "properties": {
-                "additionalMinutes": {
-                    "type": "integer"
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "uhrpUrl": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.renewResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "newExpiryTime": {
-                    "type": "integer"
-                },
-                "prevExpiryTime": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.uploadRequest": {
-            "type": "object",
-            "properties": {
-                "fileSize": {
-                    "type": "integer"
-                },
-                "retentionPeriod": {
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.uploadResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "integer"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "requiredHeaders": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "uploadURL": {
-                    "type": "string"
                 }
             }
         },

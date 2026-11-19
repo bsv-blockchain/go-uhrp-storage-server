@@ -1,11 +1,12 @@
+// Package main starts the UHRP storage server.
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/joho/godotenv"
@@ -29,48 +30,64 @@ import (
 // @name Authorization
 // @description Authentication via go-bsv-middleware using BRC-43 Authfetch.
 func main() {
-	_ = godotenv.Load()
+	if err := run(context.Background()); err != nil {
+		slog.Error("Server error", "error", err)
+		os.Exit(1)
+	}
+}
+
+// run loads the configuration, initializes the wallet and serves HTTP until the server stops.
+func run(ctx context.Context) error {
+	_ = godotenv.Load() // a .env file is optional; the environment always wins
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("Failed to load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
-	// Initialize logger
 	baseLogger := logger.Configure(cfg.LogLevel, cfg.LogFormat)
 
-	// Determine public dir path
-	_, filename, _, _ := runtime.Caller(0)
-	publicDir := filepath.Join(filepath.Dir(filename), "..", "..", "public")
+	publicDir, err := filepath.Abs(cfg.PublicDir)
+	if err != nil {
+		return fmt.Errorf("resolve PUBLIC_DIR %q: %w", cfg.PublicDir, err)
+	}
 
-	// Initialize components
-	exchangeRateProvider := pricing.NewWhatsOnChainProvider()
-	calc := pricing.NewCalculator(cfg.PricePerGBMonth, exchangeRateProvider)
-	store := storage.NewFileStore(publicDir)
+	store, err := storage.NewFileStore(publicDir)
+	if err != nil {
+		return fmt.Errorf("open file store: %w", err)
+	}
+
+	defer func() { _ = store.Close() }()
+
+	slog.Info("Serving uploaded files", "cdnDir", store.CDNPath())
+
+	if cfg.ExchangeRateURL != "" {
+		slog.Info("Using a custom BSV/USD exchange rate endpoint", "url", cfg.ExchangeRateURL)
+	}
+
+	calc := pricing.NewCalculator(cfg.PricePerGBMonth, pricing.NewWhatsOnChainProviderWithURL(cfg.ExchangeRateURL))
 	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork, cfg.SLAPTrackers, baseLogger)
 
-	// Initialize wallet using wallet-toolbox
-	if cfg.ServerPrivateKey != "" && cfg.WalletStorageURL != "" {
-		if err := wp.InitWallet(context.Background()); err != nil {
-			slog.Warn("Failed to initialize wallet", "error", err)
-			slog.Info("Endpoints requiring wallet will return errors until wallet is available.")
-		}
-	} else {
+	initWallet(ctx, cfg, wp)
+
+	return server.New(cfg, calc, store, wp, publicDir, baseLogger).Start()
+}
+
+// initWallet initializes the server wallet when it is configured. Without it the server
+// still starts: /quote and the CDN work, and the wallet-backed routes are not mounted.
+func initWallet(ctx context.Context, cfg *config.Config, wp *walletpkg.Provider) {
+	if cfg.ServerPrivateKey == "" || cfg.WalletStorageURL == "" {
 		slog.Info("SERVER_PRIVATE_KEY or WALLET_STORAGE_URL not set; wallet features disabled.")
+	} else if err := wp.InitWallet(ctx); err != nil {
+		slog.Warn("Failed to initialize wallet", "error", err)
+		slog.Info("Wallet routes (/upload, /list, /renew, /find) are not mounted; restart once the wallet is reachable.")
 	}
 
-	// Log identity key
-	if cfg.ServerPrivateKey != "" {
-		privKey, err := ec.PrivateKeyFromHex(cfg.ServerPrivateKey)
-		if err == nil {
-			slog.Info("UHRP Host IdentityKey", "identityKey", privKey.PubKey().ToDERHex())
-		}
+	if cfg.ServerPrivateKey == "" {
+		return
 	}
 
-	srv := server.New(cfg, calc, store, wp, publicDir, baseLogger)
-	if err := srv.Start(); err != nil {
-		slog.Error("Server error", "error", err)
-		os.Exit(1)
+	if privKey, err := ec.PrivateKeyFromHex(cfg.ServerPrivateKey); err == nil {
+		slog.Info("UHRP Host IdentityKey", "identityKey", privKey.PubKey().ToDERHex())
 	}
 }
