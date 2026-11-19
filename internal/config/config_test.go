@@ -13,7 +13,7 @@ import (
 func configEnvVars() []string {
 	return []string{
 		"SERVER_PRIVATE_KEY", "HTTP_PORT", "HOSTING_DOMAIN", "BSV_NETWORK", "WALLET_STORAGE_URL",
-		"PRICE_PER_GB_MO", "MIN_HOSTING_MINUTES", "LOG_LEVEL", "LOG_FORMAT", "PUBLIC_DIR", "SLAP_TRACKERS",
+		"EXCHANGE_RATE_URL", "PRICE_PER_GB_MO", "MIN_HOSTING_MINUTES", "LOG_LEVEL", "LOG_FORMAT", "PUBLIC_DIR", "SLAP_TRACKERS",
 	}
 }
 
@@ -36,6 +36,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Empty(t, cfg.HostingDomain)
 	assert.Equal(t, "mainnet", cfg.BSVNetwork)
 	assert.Empty(t, cfg.WalletStorageURL)
+	assert.Empty(t, cfg.ExchangeRateURL)
 	assert.InDelta(t, 0.03, cfg.PricePerGBMonth, 1e-12)
 	assert.Equal(t, 0, cfg.MinHostingMinutes)
 	assert.Equal(t, "info", cfg.LogLevel)
@@ -56,6 +57,7 @@ func TestLoadFromEnvironment(t *testing.T) {
 	t.Setenv("HOSTING_DOMAIN", "files.example.com")
 	t.Setenv("BSV_NETWORK", "testnet")
 	t.Setenv("WALLET_STORAGE_URL", "https://storage.example.com")
+	t.Setenv("EXCHANGE_RATE_URL", "http://127.0.0.1:9999/rate")
 	t.Setenv("PRICE_PER_GB_MO", "0.25")
 	t.Setenv("MIN_HOSTING_MINUTES", "30")
 	t.Setenv("LOG_LEVEL", "debug")
@@ -71,6 +73,7 @@ func TestLoadFromEnvironment(t *testing.T) {
 	assert.Equal(t, "files.example.com", cfg.HostingDomain)
 	assert.Equal(t, "testnet", cfg.BSVNetwork)
 	assert.Equal(t, "https://storage.example.com", cfg.WalletStorageURL)
+	assert.Equal(t, "http://127.0.0.1:9999/rate", cfg.ExchangeRateURL)
 	assert.InDelta(t, 0.25, cfg.PricePerGBMonth, 1e-12)
 	assert.Equal(t, 30, cfg.MinHostingMinutes)
 	assert.Equal(t, "debug", cfg.LogLevel)

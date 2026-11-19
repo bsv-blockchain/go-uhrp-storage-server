@@ -61,7 +61,11 @@ func run(ctx context.Context) error {
 
 	slog.Info("Serving uploaded files", "cdnDir", store.CDNPath())
 
-	calc := pricing.NewCalculator(cfg.PricePerGBMonth, pricing.NewWhatsOnChainProvider())
+	if cfg.ExchangeRateURL != "" {
+		slog.Info("Using a custom BSV/USD exchange rate endpoint", "url", cfg.ExchangeRateURL)
+	}
+
+	calc := pricing.NewCalculator(cfg.PricePerGBMonth, pricing.NewWhatsOnChainProviderWithURL(cfg.ExchangeRateURL))
 	wp := walletpkg.NewProvider(cfg.ServerPrivateKey, cfg.WalletStorageURL, cfg.BSVNetwork, cfg.SLAPTrackers, baseLogger)
 
 	initWallet(ctx, cfg, wp)
