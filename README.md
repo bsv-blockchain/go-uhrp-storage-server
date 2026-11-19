@@ -306,7 +306,7 @@ magex format:fix
 </details>
 
 <details>
-<summary><strong>Repository Features</strong></summary>
+<summary><strong><code>Repository Features</code></strong></summary>
 <br/>
 
 This repository includes 25+ built-in features covering CI/CD, security, code quality, developer experience, and community tooling.
@@ -359,7 +359,7 @@ The system is configured via modular environment files in [`.github/env/`](.gith
 </details>
 
 <details>
-<summary><strong>GitHub Workflows</strong></summary>
+<summary><strong><code>GitHub Workflows</code></strong></summary>
 <br/>
 
 All workflows are driven by modular configuration in [`.github/env/`](.github/env/README.md); no YAML editing required.
