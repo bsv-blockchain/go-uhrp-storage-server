@@ -133,6 +133,7 @@ updates:
       include: "scope"
     cooldown:
       default-days: 3
+      exclude: ["golang"]
 
   # ──────────────────────────────────────────────────────────────
   # 5. npm (TypeScript Jest integration test client)
