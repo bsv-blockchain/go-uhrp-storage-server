@@ -1,0 +1,11 @@
+# Gitleaks false positives (https://github.com/gitleaks/gitleaks#gitleaksignore)
+#
+# Historical commits only: the generic-api-key rule matched test fixtures that hard-coded a
+# compressed secp256k1 *public* key (02cbc140…) as an uploader identity. A public key is not
+# a secret. The current tests derive that key from a throwaway private key instead.
+142f0917c3cffbf1a144b93e0f3eb7abf61c1d68:internal/wallet/actions_test.go:generic-api-key:60
+142f0917c3cffbf1a144b93e0f3eb7abf61c1d68:internal/wallet/outputs_test.go:generic-api-key:19
+142f0917c3cffbf1a144b93e0f3eb7abf61c1d68:internal/wallet/outputs_test.go:generic-api-key:99
+47451bec6da85b114f468d260ddcf205d2f37291:internal/wallet/actions_test.go:generic-api-key:64
+47451bec6da85b114f468d260ddcf205d2f37291:internal/wallet/outputs_test.go:generic-api-key:20
+47451bec6da85b114f468d260ddcf205d2f37291:internal/wallet/outputs_test.go:generic-api-key:101
