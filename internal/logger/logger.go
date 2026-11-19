@@ -10,6 +10,7 @@ import (
 // It returns a newly configured base logger instance.
 func Configure(levelStr, formatStr string) *slog.Logger {
 	var level slog.Level
+
 	switch strings.ToLower(levelStr) {
 	case "debug":
 		level = slog.LevelDebug
@@ -34,5 +35,6 @@ func Configure(levelStr, formatStr string) *slog.Logger {
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
+
 	return logger
 }

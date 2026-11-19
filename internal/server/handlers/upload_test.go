@@ -1,117 +1,155 @@
 package handlers_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
-	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet/mocks"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
-func TestUploadHandler_ServeHTTP(t *testing.T) {
-	pubHex := "026210202604084f83b63a6a978f135bbf32d525701f5c64390757a419241d7c38"
-	pub, _ := ec.PublicKeyFromString(pubHex)
+type createHMACFunc func(ctx context.Context, args sdkWallet.CreateHMACArgs, originator string) (*sdkWallet.CreateHMACResult, error)
+
+func fixedHMAC(context.Context, sdkWallet.CreateHMACArgs, string) (*sdkWallet.CreateHMACResult, error) {
+	return &sdkWallet.CreateHMACResult{HMAC: [32]byte{1, 2, 3}}, nil
+}
+
+func TestUploadHandlerServeHTTP(t *testing.T) {
+	pub := testIdentityKey(t)
 
 	tests := []struct {
 		name           string
 		identityKey    *ec.PublicKey
-		body           interface{}
-		mockHMACFunc   func(ctx context.Context, args sdkWallet.CreateHMACArgs, originator string) (*sdkWallet.CreateHMACResult, error)
+		body           any
+		createHMAC     createHMACFunc
 		expectedStatus int
 		expectedCode   string
 	}{
 		{
-			name:           "Unauthorized",
-			identityKey:    nil,
+			name:           "unauthorized",
 			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   "ERR_UNAUTHORIZED",
 		},
 		{
-			name:           "Invalid Body",
+			name:           "invalid body",
 			identityKey:    pub,
 			body:           "invalid",
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   "ERR_INVALID_BODY",
 		},
 		{
-			name:           "Invalid File Size",
+			name:           "invalid file size",
 			identityKey:    pub,
 			body:           handlers.UploadRequest{FileSize: 0, RetentionPeriod: 60},
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   "ERR_INVALID_SIZE",
 		},
 		{
-			name:           "Invalid Retention Period",
+			name:           "file too large",
+			identityKey:    pub,
+			body:           handlers.UploadRequest{FileSize: 11_000_000_001, RetentionPeriod: 60},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "ERR_INVALID_SIZE",
+		},
+		{
+			name:           "missing retention period",
 			identityKey:    pub,
 			body:           handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 0},
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   "ERR_NO_RETENTION_PERIOD",
 		},
 		{
-			name:           "Retention Period Too Small",
+			name:           "retention period too small",
 			identityKey:    pub,
 			body:           handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 5},
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   "ERR_INVALID_RETENTION_PERIOD",
 		},
 		{
-			name:        "Success",
+			name:        "HMAC failure",
 			identityKey: pub,
 			body:        handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60},
-			mockHMACFunc: func(ctx context.Context, args sdkWallet.CreateHMACArgs, originator string) (*sdkWallet.CreateHMACResult, error) {
-				return &sdkWallet.CreateHMACResult{HMAC: [32]byte{1, 2, 3}}, nil
+			createHMAC: func(context.Context, sdkWallet.CreateHMACArgs, string) (*sdkWallet.CreateHMACResult, error) {
+				return nil, errWalletUnavailable
 			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedCode:   "ERR_HMAC",
+		},
+		{
+			name:           "success",
+			identityKey:    pub,
+			body:           handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60},
+			createHMAC:     fixedHMAC,
 			expectedStatus: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mw := &mocks.MockWallet{
-				CreateHMACFunc: tt.mockHMACFunc,
-			}
-			wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
-			wp.SetWallet(mw)
-
-			calc := pricing.NewCalculator(0.03, mockOracle{})
 			h := &handlers.UploadHandler{
-				Calculator:        calc,
-				WalletProvider:    wp,
+				Calculator:        newCalculator(),
+				WalletProvider:    newProvider(&mocks.MockWallet{CreateHMACFunc: tt.createHMAC}),
 				HostingDomain:     "localhost:8080",
 				MinHostingMinutes: 10,
 				Logger:            slog.Default(),
 			}
 
-			bodyBytes, _ := json.Marshal(tt.body)
-			req := httptest.NewRequest("POST", "/upload", bytes.NewReader(bodyBytes))
-			if tt.identityKey != nil {
-				ctx := context.WithValue(req.Context(), middlewares.IdentityContextKey, tt.identityKey)
-				req = req.WithContext(ctx)
+			w := serve(h, newRequest(t, http.MethodPost, "/upload", tt.body, tt.identityKey))
+			require.Equal(t, tt.expectedStatus, w.Code, "body: %s", w.Body.String())
+			assert.Equal(t, tt.expectedCode, decode[handlers.UploadResponse](t, w).Code)
+		})
+	}
+}
+
+func TestUploadHandlerPresignedURL(t *testing.T) {
+	pub := testIdentityKey(t)
+
+	tests := []struct {
+		name   string
+		domain string
+		scheme string
+	}{
+		{name: "localhost uses http", domain: "localhost:8080", scheme: "http"},
+		{name: "public host uses https", domain: "files.example.com", scheme: "https"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &handlers.UploadHandler{
+				Calculator:     newCalculator(),
+				WalletProvider: newProvider(&mocks.MockWallet{CreateHMACFunc: fixedHMAC}),
+				HostingDomain:  tt.domain,
+				Logger:         slog.Default(),
 			}
 
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
+			w := serve(h, newRequest(t, http.MethodPost, "/upload", handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60}, pub))
+			require.Equal(t, http.StatusOK, w.Code)
 
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d. Body: %s", tt.expectedStatus, w.Code, w.Body.String())
-			}
+			resp := decode[handlers.UploadResponse](t, w)
+			assert.Equal(t, "success", resp.Status)
+			assert.Equal(t, int64(10), resp.Amount)
 
-			if tt.expectedCode != "" {
-				var resp handlers.UploadResponse
-				json.Unmarshal(w.Body.Bytes(), &resp)
-				if resp.Code != tt.expectedCode {
-					t.Errorf("expected code %s, got %s", tt.expectedCode, resp.Code)
-				}
-			}
+			uploadURL, err := url.Parse(resp.UploadURL)
+			require.NoError(t, err)
+			assert.Equal(t, tt.scheme, uploadURL.Scheme)
+			assert.Equal(t, tt.domain, uploadURL.Host)
+			assert.Equal(t, "/put", uploadURL.Path)
+
+			q := uploadURL.Query()
+			assert.Equal(t, "1024", q.Get("fileSize"))
+			assert.Equal(t, pub.ToDERHex(), q.Get("uploader"))
+			assert.NotEmpty(t, q.Get("objectID"))
+			assert.NotEmpty(t, q.Get("expiry"))
+			assert.True(t, strings.HasPrefix(q.Get("hmac"), "010203"))
 		})
 	}
 }

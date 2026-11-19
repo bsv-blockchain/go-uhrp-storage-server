@@ -9,6 +9,7 @@ import (
 // MockWallet implements sdkWallet.Interface for testing purposes.
 type MockWallet struct {
 	sdkWallet.Interface
+
 	ListOutputsFunc                  func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error)
 	CreateActionFunc                 func(ctx context.Context, args sdkWallet.CreateActionArgs, originator string) (*sdkWallet.CreateActionResult, error)
 	SignActionFunc                   func(ctx context.Context, args sdkWallet.SignActionArgs, originator string) (*sdkWallet.SignActionResult, error)
@@ -43,6 +44,7 @@ func (m *MockWallet) ListOutputs(ctx context.Context, args sdkWallet.ListOutputs
 	if m.ListOutputsFunc != nil {
 		return m.ListOutputsFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.ListOutputsResult{}, nil
 }
 
@@ -50,6 +52,7 @@ func (m *MockWallet) CreateAction(ctx context.Context, args sdkWallet.CreateActi
 	if m.CreateActionFunc != nil {
 		return m.CreateActionFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.CreateActionResult{}, nil
 }
 
@@ -57,6 +60,7 @@ func (m *MockWallet) SignAction(ctx context.Context, args sdkWallet.SignActionAr
 	if m.SignActionFunc != nil {
 		return m.SignActionFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.SignActionResult{}, nil
 }
 
@@ -64,6 +68,7 @@ func (m *MockWallet) GetPublicKey(ctx context.Context, args sdkWallet.GetPublicK
 	if m.GetPublicKeyFunc != nil {
 		return m.GetPublicKeyFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.GetPublicKeyResult{}, nil
 }
 
@@ -71,6 +76,7 @@ func (m *MockWallet) Decrypt(ctx context.Context, args sdkWallet.DecryptArgs, or
 	if m.DecryptFunc != nil {
 		return m.DecryptFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.DecryptResult{}, nil
 }
 
@@ -78,6 +84,7 @@ func (m *MockWallet) CreateHMAC(ctx context.Context, args sdkWallet.CreateHMACAr
 	if m.CreateHMACFunc != nil {
 		return m.CreateHMACFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.CreateHMACResult{}, nil
 }
 
@@ -85,6 +92,7 @@ func (m *MockWallet) VerifyHMAC(ctx context.Context, args sdkWallet.VerifyHMACAr
 	if m.VerifyHMACFunc != nil {
 		return m.VerifyHMACFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.VerifyHMACResult{}, nil
 }
 
@@ -92,6 +100,7 @@ func (m *MockWallet) Encrypt(ctx context.Context, args sdkWallet.EncryptArgs, or
 	if m.EncryptFunc != nil {
 		return m.EncryptFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.EncryptResult{}, nil
 }
 
@@ -99,6 +108,7 @@ func (m *MockWallet) CreateSignature(ctx context.Context, args sdkWallet.CreateS
 	if m.CreateSignatureFunc != nil {
 		return m.CreateSignatureFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.CreateSignatureResult{}, nil
 }
 
@@ -106,6 +116,7 @@ func (m *MockWallet) VerifySignature(ctx context.Context, args sdkWallet.VerifyS
 	if m.VerifySignatureFunc != nil {
 		return m.VerifySignatureFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.VerifySignatureResult{}, nil
 }
 
@@ -113,6 +124,7 @@ func (m *MockWallet) AcquireCertificate(ctx context.Context, args sdkWallet.Acqu
 	if m.AcquireCertificateFunc != nil {
 		return m.AcquireCertificateFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.Certificate{}, nil
 }
 
@@ -120,6 +132,7 @@ func (m *MockWallet) ListCertificates(ctx context.Context, args sdkWallet.ListCe
 	if m.ListCertificatesFunc != nil {
 		return m.ListCertificatesFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.ListCertificatesResult{}, nil
 }
 
@@ -127,6 +140,7 @@ func (m *MockWallet) ProveCertificate(ctx context.Context, args sdkWallet.ProveC
 	if m.ProveCertificateFunc != nil {
 		return m.ProveCertificateFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.ProveCertificateResult{}, nil
 }
 
@@ -134,6 +148,7 @@ func (m *MockWallet) RelinquishCertificate(ctx context.Context, args sdkWallet.R
 	if m.RelinquishCertificateFunc != nil {
 		return m.RelinquishCertificateFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.RelinquishCertificateResult{}, nil
 }
 
@@ -141,6 +156,7 @@ func (m *MockWallet) RelinquishOutput(ctx context.Context, args sdkWallet.Relinq
 	if m.RelinquishOutputFunc != nil {
 		return m.RelinquishOutputFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.RelinquishOutputResult{}, nil
 }
 
@@ -148,6 +164,7 @@ func (m *MockWallet) AbortAction(ctx context.Context, args sdkWallet.AbortAction
 	if m.AbortActionFunc != nil {
 		return m.AbortActionFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.AbortActionResult{}, nil
 }
 
@@ -155,6 +172,7 @@ func (m *MockWallet) ListActions(ctx context.Context, args sdkWallet.ListActions
 	if m.ListActionsFunc != nil {
 		return m.ListActionsFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.ListActionsResult{}, nil
 }
 
@@ -162,6 +180,7 @@ func (m *MockWallet) InternalizeAction(ctx context.Context, args sdkWallet.Inter
 	if m.InternalizeActionFunc != nil {
 		return m.InternalizeActionFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.InternalizeActionResult{}, nil
 }
 
@@ -169,6 +188,7 @@ func (m *MockWallet) RevealCounterpartyKeyLinkage(ctx context.Context, args sdkW
 	if m.RevealCounterpartyKeyLinkageFunc != nil {
 		return m.RevealCounterpartyKeyLinkageFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.RevealCounterpartyKeyLinkageResult{}, nil
 }
 
@@ -176,6 +196,7 @@ func (m *MockWallet) RevealSpecificKeyLinkage(ctx context.Context, args sdkWalle
 	if m.RevealSpecificKeyLinkageFunc != nil {
 		return m.RevealSpecificKeyLinkageFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.RevealSpecificKeyLinkageResult{}, nil
 }
 
@@ -183,6 +204,7 @@ func (m *MockWallet) DiscoverByIdentityKey(ctx context.Context, args sdkWallet.D
 	if m.DiscoverByIdentityKeyFunc != nil {
 		return m.DiscoverByIdentityKeyFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.DiscoverCertificatesResult{}, nil
 }
 
@@ -190,6 +212,7 @@ func (m *MockWallet) DiscoverByAttributes(ctx context.Context, args sdkWallet.Di
 	if m.DiscoverByAttributesFunc != nil {
 		return m.DiscoverByAttributesFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.DiscoverCertificatesResult{}, nil
 }
 
@@ -197,6 +220,7 @@ func (m *MockWallet) IsAuthenticated(ctx context.Context, args any, originator s
 	if m.IsAuthenticatedFunc != nil {
 		return m.IsAuthenticatedFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.AuthenticatedResult{}, nil
 }
 
@@ -204,6 +228,7 @@ func (m *MockWallet) WaitForAuthentication(ctx context.Context, args any, origin
 	if m.WaitForAuthenticationFunc != nil {
 		return m.WaitForAuthenticationFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.AuthenticatedResult{}, nil
 }
 
@@ -211,6 +236,7 @@ func (m *MockWallet) GetHeight(ctx context.Context, args any, originator string)
 	if m.GetHeightFunc != nil {
 		return m.GetHeightFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.GetHeightResult{}, nil
 }
 
@@ -218,6 +244,7 @@ func (m *MockWallet) GetHeaderForHeight(ctx context.Context, args sdkWallet.GetH
 	if m.GetHeaderForHeightFunc != nil {
 		return m.GetHeaderForHeightFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.GetHeaderResult{}, nil
 }
 
@@ -225,6 +252,7 @@ func (m *MockWallet) GetNetwork(ctx context.Context, args any, originator string
 	if m.GetNetworkFunc != nil {
 		return m.GetNetworkFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.GetNetworkResult{}, nil
 }
 
@@ -232,5 +260,6 @@ func (m *MockWallet) GetVersion(ctx context.Context, args any, originator string
 	if m.GetVersionFunc != nil {
 		return m.GetVersionFunc(ctx, args, originator)
 	}
+
 	return &sdkWallet.GetVersionResult{}, nil
 }

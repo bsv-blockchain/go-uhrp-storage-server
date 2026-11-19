@@ -1,86 +1,117 @@
 package handlers_test
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"log/slog"
-	"net/http/httptest"
+	"net/http"
 	"testing"
 
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/handlers"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/server/middlewares"
 	walletpkg "github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet"
 	"github.com/bsv-blockchain/go-uhrp-storage-server/internal/wallet/mocks"
-	"github.com/bsv-blockchain/go-uhrp-storage-server/pkg/pricing"
 )
 
 func TestRequestPriceCalculator(t *testing.T) {
-	pubHex := "026210202604084f83b63a6a978f135bbf32d525701f5c64390757a419241d7c38"
-	pub, _ := ec.PublicKeyFromString(pubHex)
+	pub := testIdentityKey(t)
+	advertisement := sdkWallet.Output{Tags: []string{uhrpURLTag("test"), "size_1024", "expiry_time_2000000000"}}
 
-	calc := pricing.NewCalculator(0.03, mockOracle{})
-	wp := walletpkg.NewProvider("", "", "", nil, slog.Default())
+	tests := []struct {
+		name         string
+		method       string
+		path         string
+		body         any
+		withIdentity bool
+		outputs      []sdkWallet.Output
+		wantPrice    int
+		wantErr      error
+	}{
+		{
+			// USD = (1024 / 1e9) * (60 / 43200) * 0.03, far below the 10-satoshi minimum.
+			name:      "upload price",
+			method:    http.MethodPost,
+			path:      "/upload",
+			body:      handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60},
+			wantPrice: 10,
+		},
+		{
+			name:      "large upload price",
+			method:    http.MethodPost,
+			path:      "/upload",
+			body:      handlers.UploadRequest{FileSize: 1_000_000_000, RetentionPeriod: 43_200},
+			wantPrice: 100_000,
+		},
+		{
+			name:      "unparsable upload body is free",
+			method:    http.MethodPost,
+			path:      "/upload",
+			body:      "not json",
+			wantPrice: 0,
+		},
+		{
+			name:         "renew price",
+			method:       http.MethodPost,
+			path:         "/renew",
+			body:         handlers.RenewRequest{UhrpURL: "test", AdditionalMinutes: 60},
+			withIdentity: true,
+			outputs:      []sdkWallet.Output{advertisement},
+			wantPrice:    10,
+		},
+		{
+			name:    "renew without identity",
+			method:  http.MethodPost,
+			path:    "/renew",
+			body:    handlers.RenewRequest{UhrpURL: "test", AdditionalMinutes: 60},
+			wantErr: handlers.ErrMissingIdentityKey,
+		},
+		{
+			name:         "renew of an unknown file",
+			method:       http.MethodPost,
+			path:         "/renew",
+			body:         handlers.RenewRequest{UhrpURL: "test", AdditionalMinutes: 60},
+			withIdentity: true,
+			wantErr:      walletpkg.ErrAdvertisementNotFound,
+		},
+		{
+			name:      "other route",
+			method:    http.MethodGet,
+			path:      "/list",
+			wantPrice: 0,
+		},
+	}
 
-	fn := handlers.RequestPriceCalculator(calc, wp)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wp := newProvider(&mocks.MockWallet{ListOutputsFunc: listOutputs(tt.outputs...)})
+			priceFor := handlers.RequestPriceCalculator(newCalculator(), wp)
 
-	t.Run("Upload Price", func(t *testing.T) {
-		reqBody := handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60}
-		bodyBytes, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/upload", bytes.NewReader(bodyBytes))
+			req := newRequest(t, tt.method, tt.path, tt.body, nil)
+			if tt.withIdentity {
+				req = newRequest(t, tt.method, tt.path, tt.body, pub)
+			}
 
-		price, err := fn(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Expected Satoshis (Calculated):
-		// USD = (1024 / 1e9) * (60 / 43200) * 0.03 = 0.00000000004266...
-		// Satoshis = USD * (1e8 / 30) = 0.00000000004266... * 3333333.33 = 0.000142...
-		// Minimum is 10.
-		if price != 10 {
-			t.Errorf("expected price 10, got %d", price)
-		}
-	})
+			price, err := priceFor(req)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
 
-	t.Run("Renew Price", func(t *testing.T) {
-		mw := &mocks.MockWallet{
-			ListOutputsFunc: func(ctx context.Context, args sdkWallet.ListOutputsArgs, originator string) (*sdkWallet.ListOutputsResult, error) {
-				return &sdkWallet.ListOutputsResult{
-					Outputs: []sdkWallet.Output{
-						{
-							Tags: []string{"uhrp_url_test", "size_1024", "expiry_time_2000000000"},
-						},
-					},
-				}, nil
-			},
-		}
-		wp.SetWallet(mw)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPrice, price)
+		})
+	}
+}
 
-		reqBody := handlers.RenewRequest{UhrpURL: "test", AdditionalMinutes: 60}
-		bodyBytes, _ := json.Marshal(reqBody)
-		req := httptest.NewRequest("POST", "/renew", bytes.NewReader(bodyBytes))
-		ctx := context.WithValue(req.Context(), middlewares.IdentityContextKey, pub)
-		req = req.WithContext(ctx)
+func TestRequestPriceCalculatorRestoresBody(t *testing.T) {
+	priceFor := handlers.RequestPriceCalculator(newCalculator(), newProvider(&mocks.MockWallet{}))
 
-		price, err := fn(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if price != 10 {
-			t.Errorf("expected price 10, got %d", price)
-		}
-	})
+	req := newRequest(t, http.MethodPost, "/upload", `{"fileSize":1024,"retentionPeriod":60}`, nil)
 
-	t.Run("Other Route", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/list", nil)
-		price, err := fn(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if price != 0 {
-			t.Errorf("expected price 0, got %d", price)
-		}
-	})
+	_, err := priceFor(req)
+	require.NoError(t, err)
+
+	var body handlers.UploadRequest
+	require.NoError(t, decodeBody(req, &body))
+	assert.Equal(t, handlers.UploadRequest{FileSize: 1024, RetentionPeriod: 60}, body)
 }

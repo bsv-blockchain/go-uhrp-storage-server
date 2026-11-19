@@ -1,3 +1,5 @@
+// Package wallet wraps the server's go-wallet-toolbox wallet: upload HMACs and
+// the PushDrop UHRP advertisements that announce hosted files on the overlay network.
 package wallet
 
 import (
@@ -9,12 +11,14 @@ import (
 	"github.com/bsv-blockchain/go-sdk/overlay"
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	toolbox "github.com/bsv-blockchain/go-wallet-toolbox/pkg/wallet"
-
 	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/defs"
 	wdkStorage "github.com/bsv-blockchain/go-wallet-toolbox/pkg/storage"
+	toolbox "github.com/bsv-blockchain/go-wallet-toolbox/pkg/wallet"
 	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/wdk"
 )
+
+// networkTestnet is the BSV_NETWORK value that selects testnet; any other value selects mainnet.
+const networkTestnet = "testnet"
 
 // Provider manages the wallet singleton.
 type Provider struct {
@@ -40,7 +44,7 @@ func NewProvider(serverPrivateKey, walletStorageURL, bsvNetwork string, slapTrac
 
 // InitWallet initializes the wallet-toolbox wallet using the configured
 // server private key and wallet storage URL. It must be called once at startup.
-func (p *Provider) InitWallet(ctx context.Context) error {
+func (p *Provider) InitWallet(_ context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -49,11 +53,11 @@ func (p *Provider) InitWallet(ctx context.Context) error {
 	}
 
 	if p.serverPrivateKey == "" {
-		return fmt.Errorf("SERVER_PRIVATE_KEY is required for wallet initialization")
+		return ErrMissingServerPrivateKey
 	}
 
 	chain := defs.NetworkMainnet
-	if p.bsvNetwork == "testnet" {
+	if p.isTestnet() {
 		chain = defs.NetworkTestnet
 	}
 
@@ -62,12 +66,11 @@ func (p *Provider) InitWallet(ctx context.Context) error {
 		return fmt.Errorf("invalid server private key: %w", err)
 	}
 
-	// Create a storage factory that connects to the remote wallet storage server
-	storageFactory := toolbox.StorageProviderFactoryWithWalletReturningCleanupAndError(
-		func(w sdkWallet.Interface) (wdk.WalletStorageProvider, func(), error) {
-			return wdkStorage.NewClient(p.walletStorageURL, w)
-		},
-	)
+	// A toolbox.StorageProviderFactoryWithWalletReturningCleanupAndError: connects the wallet
+	// to the remote wallet storage server.
+	storageFactory := func(w sdkWallet.Interface) (wdk.WalletStorageProvider, func(), error) {
+		return wdkStorage.NewClient(p.walletStorageURL, w)
+	}
 
 	w, err := toolbox.NewWithStorageFactory(chain, privKey, storageFactory)
 	if err != nil {
@@ -76,6 +79,7 @@ func (p *Provider) InitWallet(ctx context.Context) error {
 
 	p.wallet = w
 	p.Logger.Info("Wallet initialized", "identityKey", privKey.PubKey().ToDERHex())
+
 	return nil
 }
 
@@ -83,6 +87,7 @@ func (p *Provider) InitWallet(ctx context.Context) error {
 func (p *Provider) GetWallet() sdkWallet.Interface {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	return p.wallet
 }
 
@@ -90,26 +95,20 @@ func (p *Provider) GetWallet() sdkWallet.Interface {
 func (p *Provider) SetWallet(w sdkWallet.Interface) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	p.wallet = w
-}
-
-// ServerPrivateKey returns the configured server private key.
-func (p *Provider) ServerPrivateKey() string {
-	return p.serverPrivateKey
-}
-
-// ToolboxNetwork returns the configured network for wallet-toolbox SDK
-func (p *Provider) ToolboxNetwork() defs.BSVNetwork {
-	if p.bsvNetwork == "testnet" {
-		return defs.NetworkTestnet
-	}
-	return defs.NetworkMainnet
 }
 
 // OverlayNetwork returns the configured network for overlay SDK
 func (p *Provider) OverlayNetwork() overlay.Network {
-	if p.bsvNetwork == "testnet" {
+	if p.isTestnet() {
 		return overlay.NetworkTestnet
 	}
+
 	return overlay.NetworkMainnet
+}
+
+// isTestnet reports whether the provider is configured for testnet.
+func (p *Provider) isTestnet() bool {
+	return p.bsvNetwork == networkTestnet
 }

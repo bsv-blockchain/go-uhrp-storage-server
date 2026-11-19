@@ -1,96 +1,84 @@
+// Package main uploads a file and then renews its retention against a running UHRP storage server.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
-	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/storage"
-	sdkWallet "github.com/bsv-blockchain/go-sdk/wallet"
-	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/defs"
-	wdkStorage "github.com/bsv-blockchain/go-wallet-toolbox/pkg/storage"
-	"github.com/bsv-blockchain/go-wallet-toolbox/pkg/wallet"
+
+	"github.com/bsv-blockchain/go-uhrp-storage-server/examples/internal/exampleclient"
 )
 
+const (
+	retentionMinutes  = 60
+	additionalMinutes = 120
+)
+
+// errNotPublished is returned when the server accepted the upload but did not publish it.
+var errNotPublished = errors.New("file was not published")
+
 func main() {
-	serverURL := "http://localhost:8080"
-	storageURL := "http://localhost:8100"
-	fmt.Printf("Starting Go repo test script against: %s\n", serverURL)
-
-	// 1. Setup Auth - create user wallet
-	privateKey, _ := ec.PrivateKeyFromBytes([]byte("example_xpriv_key"))
-
-	pw, err := sdkWallet.NewCompletedProtoWallet(privateKey)
-	if err != nil {
-		log.Fatalf("failed to create proto wallet: %v", err)
+	if err := run(context.Background()); err != nil {
+		log.Fatal(err)
 	}
-	wspc, cleanup, err := wdkStorage.NewClient(storageURL, pw)
-	if err != nil {
-		log.Fatalf("failed to create storage provider client: %v", err)
-	}
+}
 
+func run(ctx context.Context) error {
+	uploader, cleanup, err := exampleclient.NewUploader()
+	if err != nil {
+		return err
+	}
 	defer cleanup()
 
-	aliceWallet, err := wallet.New(defs.NetworkMainnet, privateKey, wspc)
-	if err != nil {
-		log.Fatalf("failed: %v", err)
-	}
-
-	fmt.Printf("User Identity Key (Client): %s\n", privateKey.PubKey().ToDERHex())
-
-	// 2. Initialize the StorageUploader
-	uploader, err := storage.NewUploader(storage.UploaderConfig{
-		StorageURL: serverURL,
-		Wallet:     aliceWallet,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create uploader: %v", err)
-	}
-
-	// 3. Upload File
-	fileContent := []byte("TEST123 at: " + time.Now().String())
-	retentionMinutes := 60
 	file := storage.UploadableFile{
-		Data: fileContent,
+		Data: []byte("TEST123 at: " + time.Now().String()),
 		Type: "text/plain",
 	}
 
-	result, err := uploader.PublishFile(context.Background(), file, retentionMinutes)
-	if result.Published {
-		fmt.Printf("File published successfully! UHRP URL: %s\n", result.UhrpURL)
-
-		// 4. Find file by URL
-		fmt.Println("\n--- Retrieving previous metadata before renewal ---")
-		fileMetadata, err := uploader.FindFile(context.Background(), result.UhrpURL)
-		if err != nil {
-			fmt.Printf("Failed to find file metadata: %v\n", err)
-		} else {
-			fmt.Printf("File Metadata: %+v\n", fileMetadata)
-		}
-
-		// 5. Renew File
-		fmt.Println("\n--- Renewing file for additional 120 minutes ---")
-		renewResult, err := uploader.RenewFile(context.Background(), result.UhrpURL, 120)
-		if err != nil {
-			log.Fatalf("Renewal failed: %v", err)
-		}
-
-		fmt.Printf("Renew Successful!\n")
-		fmt.Printf("Status: %s\n", renewResult.Status)
-		fmt.Printf("Previous Expiry: %d\n", renewResult.PrevExpiryTime)
-		fmt.Printf("New Expiry: %d\n", renewResult.NewExpiryTime)
-		fmt.Printf("Amount Charged: %d satoshis\n", renewResult.Amount)
-
-		// 6. Find file by URL
-		fmt.Println("\n--- Retrieving updated metadata ---")
-		updatedFileMetadata, err := uploader.FindFile(context.Background(), result.UhrpURL)
-		if err != nil {
-			fmt.Printf("Failed to find updated file metadata: %v\n", err)
-		} else {
-			fmt.Printf("Updated File Metadata: %+v\n", updatedFileMetadata)
-		}
-
+	result, err := uploader.PublishFile(ctx, file, retentionMinutes)
+	if err != nil {
+		return fmt.Errorf("publish file: %w", err)
 	}
+
+	if !result.Published {
+		return fmt.Errorf("%w: %+v", errNotPublished, result)
+	}
+
+	log.Printf("File published successfully! UHRP URL: %s", result.UhrpURL)
+
+	log.Println("--- Retrieving previous metadata before renewal ---")
+	printMetadata(ctx, uploader, result.UhrpURL)
+
+	log.Printf("--- Renewing file for additional %d minutes ---", additionalMinutes)
+
+	renewResult, err := uploader.RenewFile(ctx, result.UhrpURL, additionalMinutes)
+	if err != nil {
+		return fmt.Errorf("renew file: %w", err)
+	}
+
+	log.Println("Renew Successful!")
+	log.Printf("Status: %s", renewResult.Status)
+	log.Printf("Previous Expiry: %d", renewResult.PrevExpiryTime)
+	log.Printf("New Expiry: %d", renewResult.NewExpiryTime)
+	log.Printf("Amount Charged: %d satoshis", renewResult.Amount)
+
+	log.Println("--- Retrieving updated metadata ---")
+	printMetadata(ctx, uploader, result.UhrpURL)
+
+	return nil
+}
+
+// printMetadata looks up a published file's metadata.
+func printMetadata(ctx context.Context, uploader *storage.Uploader, uhrpURL string) {
+	fileMetadata, err := uploader.FindFile(ctx, uhrpURL)
+	if err != nil {
+		log.Printf("Failed to find file metadata: %v", err)
+		return
+	}
+
+	log.Printf("File Metadata: %+v", fileMetadata)
 }

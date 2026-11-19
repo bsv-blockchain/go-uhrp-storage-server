@@ -1,3 +1,4 @@
+// Package config loads the server configuration from environment variables.
 package config
 
 import (
@@ -17,14 +18,18 @@ type Config struct {
 	MinHostingMinutes int
 	LogLevel          string
 	LogFormat         string
+	PublicDir         string
 	SLAPTrackers      []string
 }
 
-var defaultSLAPTrackers = []string{
-	"https://overlay-us-1.bsvb.tech",
-	"https://overlay-eu-1.bsvb.tech",
-	"https://overlay-ap-1.bsvb.tech",
-	"https://users.bapp.dev",
+// defaultSLAPTrackers returns the SLAP trackers used to find UHRP overlay hosts when SLAP_TRACKERS is unset.
+func defaultSLAPTrackers() []string {
+	return []string{
+		"https://overlay-us-1.bsvb.tech",
+		"https://overlay-eu-1.bsvb.tech",
+		"https://overlay-ap-1.bsvb.tech",
+		"https://users.bapp.dev",
+	}
 }
 
 // Load reads configuration from environment variables.
@@ -39,8 +44,10 @@ func Load() (*Config, error) {
 		MinHostingMinutes: getEnvInt("MIN_HOSTING_MINUTES", 0),
 		LogLevel:          getEnvDefault("LOG_LEVEL", "info"),
 		LogFormat:         getEnvDefault("LOG_FORMAT", "json"),
-		SLAPTrackers:      getEnvStringSlice("SLAP_TRACKERS", defaultSLAPTrackers),
+		PublicDir:         getEnvDefault("PUBLIC_DIR", "public"),
+		SLAPTrackers:      getEnvStringSlice("SLAP_TRACKERS", defaultSLAPTrackers()),
 	}
+
 	return cfg, nil
 }
 
@@ -48,6 +55,7 @@ func getEnvDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
+
 	return def
 }
 
@@ -58,6 +66,7 @@ func getEnvFloat(key string, def float64) float64 {
 			return f
 		}
 	}
+
 	return def
 }
 
@@ -68,6 +77,7 @@ func getEnvInt(key string, def int) int {
 			return i
 		}
 	}
+
 	return def
 }
 
@@ -76,11 +86,14 @@ func getEnvStringSlice(key string, def []string) []string {
 	if v == "" {
 		return def
 	}
+
 	var result []string
+
 	for _, s := range strings.Split(v, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			result = append(result, s)
 		}
 	}
+
 	return result
 }

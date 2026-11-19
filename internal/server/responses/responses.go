@@ -1,7 +1,9 @@
+// Package responses writes the server's JSON responses, including the standard error shape.
 package responses
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -16,7 +18,11 @@ type ErrorResponse struct {
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	// The status line is already sent, so an encoding or write error (usually a client
+	// that disconnected) cannot be reported to the client; it is only logged.
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Debug("Failed to write JSON response", "status", status, "error", err)
+	}
 }
 
 // WriteError writes an error response.
