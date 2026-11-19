@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -106,6 +107,13 @@ func TestUploadHandlerServeHTTP(t *testing.T) {
 			w := serve(h, newRequest(t, http.MethodPost, "/upload", tt.body, tt.identityKey))
 			require.Equal(t, tt.expectedStatus, w.Code, "body: %s", w.Body.String())
 			assert.Equal(t, tt.expectedCode, decode[handlers.UploadResponse](t, w).Code)
+
+			// The @bsv/sdk StorageUploader rejects a success reply without
+			// requiredHeaders, so an empty set must still be sent as {}.
+			if tt.expectedStatus == http.StatusOK {
+				raw := decode[map[string]json.RawMessage](t, w)
+				assert.JSONEq(t, "{}", string(raw["requiredHeaders"]), "body: %s", w.Body.String())
+			}
 		})
 	}
 }
