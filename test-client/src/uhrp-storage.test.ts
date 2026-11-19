@@ -6,8 +6,8 @@
  * Reference: https://github.com/bsv-blockchain/ts-sdk/blob/master/src/storage/StorageUploader.ts
  *
  * Prerequisites:
- *   1. Start the Go server: cd ../; go run ./cmd/server
- *   2. Run tests: npx jest
+ *   1. Start the Go server: cd ../; HTTP_PORT=8081 HOSTING_DOMAIN=localhost:8081 go run ./cmd/server
+ *   2. Run tests: npx jest src/uhrp-storage.test.ts
  */
 
 import { PrivateKey, ProtoWallet, StorageUploader, StorageUtils } from '@bsv/sdk'
@@ -19,11 +19,17 @@ const SERVER_URL = process.env.UHRP_HOST || 'http://localhost:8081'
 const userKey = PrivateKey.fromRandom()
 const userWallet = new ProtoWallet(userKey)
 
-// Create StorageUploader instance pointed at local server
-const uploader = new StorageUploader({
-  storageURL: SERVER_URL,
-  wallet: userWallet as any,
-})
+// StorageUploader (@bsv/sdk 2.8+) only accepts a public HTTPS origin, so it is created on first
+// use by the auth tests. Everything else calls the server directly and also runs against a local
+// http:// server.
+let uploaderInstance: StorageUploader | undefined
+function uploader(): StorageUploader {
+  uploaderInstance ??= new StorageUploader({
+    storageURL: SERVER_URL,
+    wallet: userWallet as any,
+  })
+  return uploaderInstance
+}
 
 // Helper: make a direct (non-authed) JSON POST
 async function postJSON(path: string, body: object): Promise<any> {
@@ -127,8 +133,9 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
   // Upload flow (POST /upload → PUT /put) — requires auth
   // ═══════════════════════════════════════════════════════════════════
 
-  // Note: Upload, List, Find, Renew require auth middleware (/.well-known/auth).
-  // When auth middleware is wired up in the Go server, change these to test().
+  // Upload, List, Find and Renew need BRC-31 auth, so the server must run with a wallet
+  // (SERVER_PRIVATE_KEY and WALLET_STORAGE_URL), and StorageUploader needs it on a public
+  // HTTPS origin: run them with UHRP_AUTH_ENABLED=true UHRP_HOST=https://your-host.
   const authTest = process.env.UHRP_AUTH_ENABLED === 'true' ? test : test.skip
 
   describe('Upload + Put flow', () => {
@@ -137,7 +144,7 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
       const fileData = new Uint8Array(fileContent)
 
       // publishFile uses authFetch for /upload, then direct fetch for PUT
-      const result = await uploader.publishFile({
+      const result = await uploader().publishFile({
         file: { data: fileData, type: 'text/plain' },
         retentionPeriod: 60, // 1 hour
       })
@@ -157,7 +164,7 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
       const binaryData = new Uint8Array(256)
       for (let i = 0; i < 256; i++) binaryData[i] = i
 
-      const result = await uploader.publishFile({
+      const result = await uploader().publishFile({
         file: { data: binaryData, type: 'application/octet-stream' },
         retentionPeriod: 120,
       })
@@ -173,7 +180,7 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
 
   describe('GET /list', () => {
     authTest('should list uploads for the authenticated user', async () => {
-      const uploads = await uploader.listUploads()
+      const uploads = await uploader().listUploads()
 
       expect(Array.isArray(uploads)).toBe(true)
       // After previous upload tests, we should have at least some entries
@@ -188,7 +195,7 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
   describe('GET /find', () => {
     authTest('should return error for a non-existent UHRP URL', async () => {
       await expect(
-        uploader.findFile('XUT6PqWb3GP3LR7dmBMCJwZ3oo5g1iGCF3CrpzyuJCemkGu1WGoq')
+        uploader().findFile('XUT6PqWb3GP3LR7dmBMCJwZ3oo5g1iGCF3CrpzyuJCemkGu1WGoq')
       ).rejects.toThrow()
     })
   })
@@ -200,7 +207,7 @@ describe('Go UHRP Storage Server — Integration Tests', () => {
   describe('POST /renew', () => {
     authTest('should return error when renewing a non-existent file', async () => {
       await expect(
-        uploader.renewFile('XUT6PqWb3GP3LR7dmBMCJwZ3oo5g1iGCF3CrpzyuJCemkGu1WGoq', 60)
+        uploader().renewFile('XUT6PqWb3GP3LR7dmBMCJwZ3oo5g1iGCF3CrpzyuJCemkGu1WGoq', 60)
       ).rejects.toThrow()
     })
   })
