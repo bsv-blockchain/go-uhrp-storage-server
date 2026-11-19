@@ -2,38 +2,45 @@ package pricing
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/mrz1836/go-whatsonchain"
 )
 
 const (
-	// whatsOnChainExchangeRateURL is WhatsOnChain's BSV/USD exchange-rate endpoint.
-	whatsOnChainExchangeRateURL = "https://api.whatsonchain.com/v1/bsv/main/exchangerate"
-
+	// whatsOnChainTimeout bounds each request to the API.
 	whatsOnChainTimeout = 10 * time.Second
+
+	// whatsOnChainRetryCount is how many times a failed request (network error, 429 or 5xx) is
+	// retried, so a rate lookup makes at most three attempts.
+	whatsOnChainRetryCount = 2
+
+	// The backoff between attempts: about 250 ms and then 500 ms, plus up to 100 ms of jitter.
+	// The library's default (2 ms to 10 ms) is too short to wait out a rate limit.
+	whatsOnChainBackoffInitial = 250 * time.Millisecond
+	whatsOnChainBackoffMax     = 2 * time.Second
+	whatsOnChainBackoffFactor  = 2.0
+	whatsOnChainBackoffJitter  = 100 * time.Millisecond
 
 	// whatsOnChainRefreshInterval is how long a fetched rate is served without asking the API again.
 	whatsOnChainRefreshInterval = 5 * time.Minute
 
 	// whatsOnChainCacheTTL is the age past which a cached rate is never served, even while the API is down.
 	whatsOnChainCacheTTL = 15 * time.Minute
-
-	// maxExchangeRateResponseBytes bounds how much of a response body is decoded.
-	maxExchangeRateResponseBytes = 64 << 10
 )
 
-// ErrUnexpectedStatus is returned when the exchange-rate API answers with a non-200 status.
-var ErrUnexpectedStatus = errors.New("unexpected exchange rate response status")
+// exchangeRateGetter is the part of the WhatsOnChain client the provider uses.
+type exchangeRateGetter interface {
+	GetExchangeRate(ctx context.Context) (*whatsonchain.ExchangeRate, error)
+}
 
-// WhatsOnChainProvider is the default implementation that fetches rates from Whatsonchain.
+// WhatsOnChainProvider is the default ExchangeRateProvider: it reads the BSV/USD rate from
+// WhatsOnChain through go-whatsonchain and caches it.
 type WhatsOnChainProvider struct {
-	httpClient *http.Client
-	url        string
+	client exchangeRateGetter
 
 	mu              sync.RWMutex
 	cachedRate      float64
@@ -42,47 +49,55 @@ type WhatsOnChainProvider struct {
 	cacheTTL        time.Duration
 }
 
-// NewWhatsOnChainProvider creates a new oracle instance targeting Whatsonchain APIs.
-func NewWhatsOnChainProvider() *WhatsOnChainProvider {
-	return NewWhatsOnChainProviderWithURL("")
-}
-
-// NewWhatsOnChainProviderWithURL creates a provider for any endpoint that answers like WhatsOnChain's
-// exchange-rate API (a JSON object with a "rate" field, in USD per BSV). An empty url selects WhatsOnChain.
-func NewWhatsOnChainProviderWithURL(url string) *WhatsOnChainProvider {
-	if url == "" {
-		url = whatsOnChainExchangeRateURL
+// NewWhatsOnChainProvider creates a provider backed by a go-whatsonchain client. The client
+// reads mainnet (the BSV/USD rate is a market price), times out each request after 10 seconds,
+// and retries a failed request twice with exponential backoff. opts are applied after these
+// defaults, so they override them: for example whatsonchain.WithAPIKey for higher rate limits,
+// or whatsonchain.WithBaseURL for a WhatsOnChain-compatible mirror or a local stub.
+//
+// whatsonchain.WithHTTPClient replaces the library's retrying client, so with it a failed
+// request is not retried.
+func NewWhatsOnChainProvider(ctx context.Context, opts ...whatsonchain.ClientOption) (*WhatsOnChainProvider, error) {
+	defaults := []whatsonchain.ClientOption{
+		whatsonchain.WithNetwork(whatsonchain.NetworkMain),
+		whatsonchain.WithRequestTimeout(whatsOnChainTimeout),
+		whatsonchain.WithRequestRetryCount(whatsOnChainRetryCount),
+		whatsonchain.WithBackoff(
+			whatsOnChainBackoffInitial, whatsOnChainBackoffMax, whatsOnChainBackoffFactor, whatsOnChainBackoffJitter,
+		),
 	}
 
-	return newWhatsOnChainProvider(url, &http.Client{Timeout: whatsOnChainTimeout})
+	client, err := whatsonchain.NewClient(ctx, append(defaults, opts...)...)
+	if err != nil {
+		return nil, fmt.Errorf("create WhatsOnChain client: %w", err)
+	}
+
+	return newWhatsOnChainProvider(client), nil
 }
 
-// newWhatsOnChainProvider creates a provider for the given endpoint and client (tests point it at a local server).
-func newWhatsOnChainProvider(url string, client *http.Client) *WhatsOnChainProvider {
+// newWhatsOnChainProvider wraps client in the rate cache (tests pass a fake client).
+func newWhatsOnChainProvider(client exchangeRateGetter) *WhatsOnChainProvider {
 	return &WhatsOnChainProvider{
-		httpClient:      client,
-		url:             url,
+		client:          client,
 		refreshInterval: whatsOnChainRefreshInterval,
 		cacheTTL:        whatsOnChainCacheTTL,
 	}
-}
-
-// exchangeRateResponse is the response structure for the Whatsonchain API.
-type exchangeRateResponse struct {
-	Rate float64 `json:"rate"`
 }
 
 // GetExchangeRate implements the ExchangeRateProvider interface.
 // A rate fetched within the refresh interval is served from the cache. Otherwise the API is asked
 // again, and if it fails, a cached rate younger than the cache TTL is served instead of the error.
 func (o *WhatsOnChainProvider) GetExchangeRate(ctx context.Context) (float64, error) {
-	if rate, ok := o.cached(o.refreshInterval); ok {
+	if rate, _, ok := o.cached(o.refreshInterval); ok {
 		return rate, nil
 	}
 
 	rate, err := o.fetch(ctx)
 	if err != nil {
-		if cached, ok := o.cached(o.cacheTTL); ok {
+		if cached, age, ok := o.cached(o.cacheTTL); ok {
+			slog.WarnContext(ctx, "Serving a cached BSV/USD exchange rate after a failed refresh",
+				"error", err, "cacheAge", age.Round(time.Second).String())
+
 			return cached, nil
 		}
 
@@ -97,38 +112,32 @@ func (o *WhatsOnChainProvider) GetExchangeRate(ctx context.Context) (float64, er
 	return rate, nil
 }
 
-// fetch requests the current rate from the API.
+// fetch asks WhatsOnChain for the current rate. A zero or non-finite rate (a 404 with a JSON body
+// decodes to a zero rate) is an error, so it is never cached.
 func (o *WhatsOnChainProvider) fetch(ctx context.Context) (float64, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.url, nil)
+	resp, err := o.client.GetExchangeRate(ctx)
+	if err == nil && resp == nil {
+		err = whatsonchain.ErrExchangeRateNotFound
+	}
+
 	if err != nil {
-		return 0, fmt.Errorf("build exchange rate request: %w", err)
+		return 0, fmt.Errorf("fetch exchange rate from WhatsOnChain: %w", err)
 	}
 
-	resp, err := o.httpClient.Do(req)
+	rate, err := validateExchangeRate(resp.Rate)
 	if err != nil {
-		return 0, fmt.Errorf("fetch exchange rate: %w", err)
+		return 0, fmt.Errorf("fetch exchange rate from WhatsOnChain: %w", err)
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("%w: %d", ErrUnexpectedStatus, resp.StatusCode)
-	}
-
-	var data exchangeRateResponse
-	if err = json.NewDecoder(io.LimitReader(resp.Body, maxExchangeRateResponseBytes)).Decode(&data); err != nil {
-		return 0, fmt.Errorf("decode exchange rate: %w", err)
-	}
-
-	return validateExchangeRate(data.Rate)
+	return rate, nil
 }
 
-// cached returns the cached rate when there is one younger than maxAge.
-func (o *WhatsOnChainProvider) cached(maxAge time.Duration) (float64, bool) {
+// cached returns the cached rate and its age when there is one younger than maxAge.
+func (o *WhatsOnChainProvider) cached(maxAge time.Duration) (float64, time.Duration, bool) {
 	o.mu.RLock()
 	rate := o.cachedRate
 	age := time.Since(o.cachedAt)
 	o.mu.RUnlock()
 
-	return rate, rate > 0 && age < maxAge
+	return rate, age, rate > 0 && age < maxAge
 }

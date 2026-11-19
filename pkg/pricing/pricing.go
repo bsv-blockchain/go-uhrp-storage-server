@@ -6,9 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
-	"time"
 )
 
 const (
@@ -18,12 +16,6 @@ const (
 	bytesPerGB      = 1_000_000_000
 	minutesPerMonth = 60 * 24 * 30
 	satoshisPerBSV  = 100_000_000
-
-	// exchangeRateAttempts is how many times GetPrice asks the provider for a rate.
-	exchangeRateAttempts = 3
-
-	// exchangeRateRetryDelay is the wait between attempts; rate APIs often fail under bursts of requests.
-	exchangeRateRetryDelay = 250 * time.Millisecond
 )
 
 var (
@@ -75,29 +67,15 @@ func (c *Calculator) GetPrice(ctx context.Context, fileSize, retentionPeriod int
 	return int64(satPrice), nil
 }
 
-// exchangeRate asks the provider for the BSV/USD rate, retrying transient failures.
+// exchangeRate asks the provider for the BSV/USD rate once (retrying a failed lookup is the
+// provider's job) and rejects a rate that cannot price a file.
 func (c *Calculator) exchangeRate(ctx context.Context) (float64, error) {
-	var err error
-
-	for attempt := 1; attempt <= exchangeRateAttempts; attempt++ {
-		var rate float64
-		if rate, err = c.Provider.GetExchangeRate(ctx); err == nil {
-			return validateExchangeRate(rate)
-		}
-
-		slog.WarnContext(ctx, "Failed to fetch exchange rate",
-			"attempt", attempt, "maxAttempts", exchangeRateAttempts, "error", err)
-
-		if attempt == exchangeRateAttempts {
-			break
-		}
-
-		if waitErr := sleepContext(ctx, exchangeRateRetryDelay); waitErr != nil {
-			return 0, fmt.Errorf("fetch exchange rate: %w", waitErr)
-		}
+	rate, err := c.Provider.GetExchangeRate(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("get exchange rate: %w", err)
 	}
 
-	return 0, fmt.Errorf("failed to fetch exchange rate after %d attempts: %w", exchangeRateAttempts, err)
+	return validateExchangeRate(rate)
 }
 
 // validateExchangeRate rejects rates that would make a price meaningless (zero, negative, NaN or infinite).
@@ -107,17 +85,4 @@ func validateExchangeRate(rate float64) (float64, error) {
 	}
 
 	return rate, nil
-}
-
-// sleepContext waits for d, returning early with the context's error if it is canceled first.
-func sleepContext(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
