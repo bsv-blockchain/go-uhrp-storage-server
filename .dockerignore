@@ -73,24 +73,3 @@ tmp
 LICENSE
 README.md
 codecov.yml
-
-##
-## Project specific
-##
-
-# Local secrets and tooling state
-.env
-.claude
-.idea
-.worktrees
-
-# Local server binaries
-/server
-/uhrp-storage-server
-
-# Jest integration test client (not part of the image)
-test-client/
-
-# Files uploaded during local runs (the directory itself is kept)
-public/cdn/*
-!public/cdn/.gitkeep

@@ -39,8 +39,6 @@ ignore:
   - "docs/**"
   - "examples/**"
   - "mocks/**"
-  - "**/mocks/**" # Nested test doubles, e.g. internal/wallet/mocks
-  - "test-client/**" # Jest integration test client (TypeScript)
   - "testing/**"
 
 # Parsers
