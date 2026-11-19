@@ -279,7 +279,7 @@ On a `localhost` `HOSTING_DOMAIN` the file is stored but not advertised, and `/p
 satoshis = max(10, floor(size_GB × retention_months × PRICE_PER_GB_MO × 10⁸ / BSV_USD))
 ```
 
-`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain through [go-whatsonchain](https://github.com/mrz1836/go-whatsonchain) and is reused for 5 minutes before it is fetched again. A failed request (a network error, a 429 or a 5xx) is retried twice with exponential backoff, and while the API is down a rate fetched in the last 15 minutes is still served. A quote may cover at most 69 million minutes (about 130 years).
+`size_GB` is `fileSize / 10⁹` and `retention_months` is `retentionPeriod / 43,200` (30-day months). The BSV/USD rate comes from WhatsOnChain through [go-whatsonchain](https://github.com/mrz1836/go-whatsonchain) and is reused for 5 minutes before it is fetched again. A failed request (a network error, a 429 or a 5xx) is retried twice with exponential backoff (about 250 ms, then 500 ms); a 429 or 503 whose `Retry-After` asks for more than 2 seconds is not retried. While the API is down, a rate fetched in the last 15 minutes is still served. A quote may cover at most 69 million minutes (about 130 years).
 
 </details>
 

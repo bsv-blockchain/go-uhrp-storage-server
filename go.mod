@@ -4,11 +4,11 @@ go 1.27.4
 
 require (
 	github.com/bsv-blockchain/go-bsv-middleware v0.16.4
-	github.com/bsv-blockchain/go-sdk v1.7.7
+	github.com/bsv-blockchain/go-sdk v1.7.8
 	github.com/bsv-blockchain/go-wallet-toolbox v0.192.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/joho/godotenv v1.6.0-pre.4
-	github.com/mrz1836/go-whatsonchain v1.3.1
+	github.com/mrz1836/go-whatsonchain v1.4.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/http-swagger v1.3.4
 	github.com/swaggo/swag v1.16.6

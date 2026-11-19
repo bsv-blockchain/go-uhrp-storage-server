@@ -15,15 +15,10 @@ const (
 	whatsOnChainTimeout = 10 * time.Second
 
 	// whatsOnChainRetryCount is how many times a failed request (network error, 429 or 5xx) is
-	// retried, so a rate lookup makes at most three attempts.
+	// retried, so a rate lookup makes at most three attempts. The wait between attempts is
+	// go-whatsonchain's default backoff: about 250 ms and then 500 ms, plus up to 100 ms of
+	// jitter, or longer when a 429 or 503 carries a Retry-After header.
 	whatsOnChainRetryCount = 2
-
-	// The backoff between attempts: about 250 ms and then 500 ms, plus up to 100 ms of jitter.
-	// The library's default (2 ms to 10 ms) is too short to wait out a rate limit.
-	whatsOnChainBackoffInitial = 250 * time.Millisecond
-	whatsOnChainBackoffMax     = 2 * time.Second
-	whatsOnChainBackoffFactor  = 2.0
-	whatsOnChainBackoffJitter  = 100 * time.Millisecond
 
 	// whatsOnChainRefreshInterval is how long a fetched rate is served without asking the API again.
 	whatsOnChainRefreshInterval = 5 * time.Minute
@@ -51,20 +46,20 @@ type WhatsOnChainProvider struct {
 
 // NewWhatsOnChainProvider creates a provider backed by a go-whatsonchain client. The client
 // reads mainnet (the BSV/USD rate is a market price), times out each request after 10 seconds,
-// and retries a failed request twice with exponential backoff. opts are applied after these
-// defaults, so they override them: for example whatsonchain.WithAPIKey for higher rate limits,
-// or whatsonchain.WithBaseURL for a WhatsOnChain-compatible mirror or a local stub.
+// and retries a failed request twice with exponential backoff. A 429 or 503 whose Retry-After
+// asks for more than the 2-second maximum backoff is returned at once instead of retried.
+// opts are applied after these defaults, so they override them: for example
+// whatsonchain.WithAPIKey for higher rate limits, or whatsonchain.WithBaseURL for a
+// WhatsOnChain-compatible mirror or a local stub.
 //
 // whatsonchain.WithHTTPClient replaces the library's retrying client, so with it a failed
-// request is not retried.
+// request is not retried. To change how requests are sent (a proxy, TLS settings, tracing)
+// and keep the retries, use whatsonchain.WithRoundTripper instead.
 func NewWhatsOnChainProvider(ctx context.Context, opts ...whatsonchain.ClientOption) (*WhatsOnChainProvider, error) {
 	defaults := []whatsonchain.ClientOption{
 		whatsonchain.WithNetwork(whatsonchain.NetworkMain),
 		whatsonchain.WithRequestTimeout(whatsOnChainTimeout),
 		whatsonchain.WithRequestRetryCount(whatsOnChainRetryCount),
-		whatsonchain.WithBackoff(
-			whatsOnChainBackoffInitial, whatsOnChainBackoffMax, whatsOnChainBackoffFactor, whatsOnChainBackoffJitter,
-		),
 	}
 
 	client, err := whatsonchain.NewClient(ctx, append(defaults, opts...)...)
@@ -112,8 +107,10 @@ func (o *WhatsOnChainProvider) GetExchangeRate(ctx context.Context) (float64, er
 	return rate, nil
 }
 
-// fetch asks WhatsOnChain for the current rate. A zero or non-finite rate (a 404 with a JSON body
-// decodes to a zero rate) is an error, so it is never cached.
+// fetch asks WhatsOnChain for the current rate. go-whatsonchain already reports a missing or
+// non-positive rate (a 404, an empty body, or a body without a positive rate) as
+// whatsonchain.ErrExchangeRateNotFound; a nil answer or an invalid rate is still checked here,
+// so a client that lets one through never gets it cached in place of a good rate.
 func (o *WhatsOnChainProvider) fetch(ctx context.Context) (float64, error) {
 	resp, err := o.client.GetExchangeRate(ctx)
 	if err == nil && resp == nil {

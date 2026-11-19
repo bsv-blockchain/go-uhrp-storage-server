@@ -14,10 +14,12 @@ import (
 	"github.com/bsv-blockchain/go-sdk/storage"
 )
 
-// ErrInvalidURL is returned (wrapping the underlying cause) when a string is not a valid UHRP URL.
-//
-// go-sdk does not yet return a sentinel for every failure, so this package wraps them all
-// in one: https://github.com/bsv-blockchain/go-sdk/issues/439
+// ErrInvalidURL is returned when a string is not a valid UHRP URL. It wraps the go-sdk
+// storage error that names the cause, so errors.Is also matches one of:
+//   - storage.ErrInvalidBase58: the URL is not valid Base58
+//   - storage.ErrInvalidURLLength: the URL does not decode to exactly 38 bytes
+//   - storage.ErrInvalidURLPrefix: the 2-byte prefix is not 0xce00
+//   - storage.ErrInvalidChecksum: the 4-byte checksum does not match
 var ErrInvalidURL = errors.New("invalid UHRP URL")
 
 // HashData computes SHA-256 of the given data and returns the hash bytes.
@@ -38,8 +40,9 @@ func GetURLForHash(hash []byte) string {
 }
 
 // GetHashFromURL extracts the SHA-256 hash from a UHRP URL. The URL may be bare or carry a
-// uhrp:// or web+uhrp:// prefix. Any failure (bad prefix, length, encoding or checksum)
-// is returned wrapped in ErrInvalidURL.
+// uhrp: or web+uhrp: scheme (in any case), with or without "//", or just a leading "//",
+// as the TypeScript SDK's normalizeURL accepts. Any failure (encoding, length, prefix or
+// checksum) is returned wrapped in ErrInvalidURL, together with the go-sdk cause.
 func GetHashFromURL(uhrpURL string) ([]byte, error) {
 	hash, err := storage.GetHashFromURL(uhrpURL)
 	if err != nil {

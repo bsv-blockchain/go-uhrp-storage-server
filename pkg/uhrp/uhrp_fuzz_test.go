@@ -1,9 +1,9 @@
 package uhrp_test
 
 import (
-	"strings"
 	"testing"
 
+	"github.com/bsv-blockchain/go-sdk/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,6 +17,8 @@ func FuzzGetHashFromURL(f *testing.F) {
 		helloWorldURL,
 		"uhrp://" + helloWorldURL,
 		"web+uhrp://" + helloWorldURL,
+		"uhrp:" + helloWorldURL,
+		"//" + helloWorldURL,
 		"uhrp://" + helloWorldHash,
 		"",
 		"uhrp://",
@@ -34,15 +36,8 @@ func FuzzGetHashFromURL(f *testing.F) {
 
 		require.Len(t, hash, 32)
 
-		bare := url
-		for _, prefix := range []string{"web+uhrp://", "uhrp://"} {
-			if strings.HasPrefix(strings.ToLower(bare), prefix) {
-				bare = bare[len(prefix):]
-				break
-			}
-		}
-
-		assert.Equal(t, bare, uhrp.GetURLForHash(hash))
+		// Whatever scheme the URL carried, the rest is the Base58Check string GetURLForHash makes.
+		assert.Equal(t, storage.NormalizeURL(url), uhrp.GetURLForHash(hash))
 	})
 }
 
