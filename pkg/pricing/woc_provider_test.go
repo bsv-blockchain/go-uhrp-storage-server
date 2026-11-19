@@ -26,8 +26,9 @@ var errFakeRateClient = errors.New("fake WhatsOnChain failure")
 
 // rateResponse is one answer from rateServer.
 type rateResponse struct {
-	status int
-	body   string
+	status     int
+	body       string
+	retryAfter string // the Retry-After header, when not empty
 }
 
 // rateServer is a local stand-in for the WhatsOnChain API. It answers with its responses in
@@ -64,6 +65,10 @@ func (s *rateServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if onRequest != nil {
 		onRequest()
+	}
+
+	if resp.retryAfter != "" {
+		w.Header().Set("Retry-After", resp.retryAfter)
 	}
 
 	w.WriteHeader(resp.status)
@@ -109,9 +114,11 @@ func TestWhatsOnChainProviderGetExchangeRate(t *testing.T) {
 		{name: "rate limit is retried", status: http.StatusTooManyRequests, wantErr: whatsonchain.ErrRequestFailed, wantHits: 3},
 		{name: "bad request is not retried", status: http.StatusBadRequest, body: "bad", wantErr: whatsonchain.ErrRequestFailed, wantHits: 1},
 		{name: "not found without a body", status: http.StatusNotFound, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
-		{name: "not found with a JSON body", status: http.StatusNotFound, body: `{"error":"not found"}`, wantErr: ErrInvalidExchangeRate, wantHits: 1},
-		{name: "zero rate", status: http.StatusOK, body: `{"rate":0}`, wantErr: ErrInvalidExchangeRate, wantHits: 1},
-		{name: "negative rate", status: http.StatusOK, body: `{"rate":-2}`, wantErr: ErrInvalidExchangeRate, wantHits: 1},
+		{name: "not found with a JSON body", status: http.StatusNotFound, body: `{"error":"not found"}`, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
+		{name: "empty body", status: http.StatusOK, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
+		{name: "body without a rate", status: http.StatusOK, body: `{}`, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
+		{name: "zero rate", status: http.StatusOK, body: `{"rate":0}`, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
+		{name: "negative rate", status: http.StatusOK, body: `{"rate":-2}`, wantErr: whatsonchain.ErrExchangeRateNotFound, wantHits: 1},
 	}
 
 	for _, tt := range tests {
@@ -168,6 +175,39 @@ func TestWhatsOnChainProviderRetryRecovers(t *testing.T) {
 
 	hits, _, _ := rs.requests()
 	assert.Equal(t, 2, hits)
+}
+
+func TestWhatsOnChainProviderRetryAfter(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		retryAfter string
+	}{
+		{name: "rate limit", status: http.StatusTooManyRequests, retryAfter: "60"},
+		{name: "unavailable", status: http.StatusServiceUnavailable, retryAfter: "120"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(whatsonchain.EnvAPIKey, "")
+
+			rs, baseURL := newRateServer(t, rateResponse{status: tt.status, retryAfter: tt.retryAfter})
+
+			// The server's own backoff: a Retry-After past its 2-second maximum is not waited out,
+			// so the failure comes back at once (and a cached rate, if any, is served sooner).
+			provider, err := NewWhatsOnChainProvider(t.Context(), whatsonchain.WithBaseURL(baseURL))
+			require.NoError(t, err)
+
+			start := time.Now()
+			_, err = provider.GetExchangeRate(t.Context())
+
+			require.ErrorIs(t, err, whatsonchain.ErrRequestFailed)
+			assert.Less(t, time.Since(start), 5*time.Second)
+
+			hits, _, _ := rs.requests()
+			assert.Equal(t, 1, hits, "no retry when Retry-After asks for longer than the maximum backoff")
+		})
+	}
 }
 
 func TestWhatsOnChainProviderStopsWhenContextIsCancelled(t *testing.T) {
@@ -408,11 +448,13 @@ func TestNewWhatsOnChainProviderDefaults(t *testing.T) {
 	assert.Equal(t, whatsOnChainRetryCount, client.RequestRetryCount())
 	assert.Empty(t, client.APIKey())
 
+	// The server relies on go-whatsonchain's default backoff (about 250 ms, then 500 ms, plus up to
+	// 100 ms of jitter); this fails if a release changes it, so the change is a deliberate choice.
 	initial, maxTimeout, factor, jitter := client.BackoffConfig()
-	assert.Equal(t, whatsOnChainBackoffInitial, initial)
-	assert.Equal(t, whatsOnChainBackoffMax, maxTimeout)
-	assert.InDelta(t, whatsOnChainBackoffFactor, factor, 1e-9)
-	assert.Equal(t, whatsOnChainBackoffJitter, jitter)
+	assert.Equal(t, 250*time.Millisecond, initial)
+	assert.Equal(t, 2*time.Second, maxTimeout)
+	assert.InDelta(t, 2.0, factor, 1e-9)
+	assert.Equal(t, 100*time.Millisecond, jitter)
 
 	assert.Equal(t, whatsOnChainRefreshInterval, provider.refreshInterval)
 	assert.Equal(t, whatsOnChainCacheTTL, provider.cacheTTL)

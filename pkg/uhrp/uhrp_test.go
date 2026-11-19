@@ -4,6 +4,9 @@ import (
 	"encoding/hex"
 	"testing"
 
+	base58 "github.com/bsv-blockchain/go-sdk/compat/base58"
+	crypto "github.com/bsv-blockchain/go-sdk/primitives/hash"
+	"github.com/bsv-blockchain/go-sdk/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -54,6 +57,9 @@ func TestGetHashFromURL(t *testing.T) {
 		{name: "uhrp scheme", url: "uhrp://" + helloWorldURL},
 		{name: "web+uhrp scheme", url: "web+uhrp://" + helloWorldURL},
 		{name: "upper-case scheme", url: "UHRP://" + helloWorldURL},
+		{name: "uhrp scheme without slashes", url: "uhrp:" + helloWorldURL},
+		{name: "web+uhrp scheme without slashes", url: "web+uhrp:" + helloWorldURL},
+		{name: "slashes without a scheme", url: "//" + helloWorldURL},
 	}
 
 	for _, tt := range tests {
@@ -66,25 +72,42 @@ func TestGetHashFromURL(t *testing.T) {
 }
 
 func TestGetHashFromURLInvalid(t *testing.T) {
+	hash, err := hex.DecodeString(helloWorldHash)
+	require.NoError(t, err)
+	require.Equal(t, helloWorldURL, base58CheckURL(t, []byte{0xce, 0x00}, hash), "base58CheckURL encodes as a UHRP URL")
+
 	tests := []struct {
-		name string
-		url  string
+		name  string
+		url   string
+		cause error
 	}{
-		{name: "empty", url: ""},
-		{name: "not base58", url: "0OIl"},
-		{name: "legacy hex form", url: "uhrp://" + helloWorldHash},
-		{name: "bad checksum", url: helloWorldURL[:len(helloWorldURL)-1] + "1"},
-		{name: "scheme only", url: "uhrp://"},
-		{name: "arbitrary text", url: "invalid"},
+		{name: "empty", url: "", cause: storage.ErrInvalidURLLength},
+		{name: "not base58", url: "0OIl", cause: storage.ErrInvalidBase58},
+		{name: "legacy hex form", url: "uhrp://" + helloWorldHash, cause: storage.ErrInvalidBase58},
+		{name: "bad checksum", url: helloWorldURL[:len(helloWorldURL)-1] + "1", cause: storage.ErrInvalidChecksum},
+		{name: "bad prefix", url: base58CheckURL(t, []byte{0xce, 0x01}, hash), cause: storage.ErrInvalidURLPrefix},
+		{name: "scheme only", url: "uhrp://", cause: storage.ErrInvalidURLLength},
+		{name: "too long", url: helloWorldURL + "1", cause: storage.ErrInvalidURLLength},
+		{name: "arbitrary text", url: "invalid", cause: storage.ErrInvalidBase58},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hash, err := uhrp.GetHashFromURL(tt.url)
 			require.ErrorIs(t, err, uhrp.ErrInvalidURL)
+			require.ErrorIs(t, err, tt.cause)
 			assert.Nil(t, hash)
 		})
 	}
+}
+
+// base58CheckURL encodes prefix and hash the way a UHRP URL is encoded, with a valid checksum.
+func base58CheckURL(t *testing.T, prefix, hash []byte) string {
+	t.Helper()
+
+	payload := append(append([]byte{}, prefix...), hash...)
+
+	return base58.Encode(append(payload, crypto.Sha256d(payload)[:4]...))
 }
 
 func TestURLRoundTrip(t *testing.T) {
